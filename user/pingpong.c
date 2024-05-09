@@ -52,9 +52,9 @@ int main(int argc,char *argv[]) {
 
     int this_pid = getpid();
     printf("%d: received pong\n", this_pid);
-  }
 
-  wait(&pid);
+    wait(&pid);
+  }
 
   exit(0);
 }
