@@ -19,7 +19,6 @@ struct pipelinecache {
   int pipe_fd[2];
   int index;
   int eliminate_val;
-
 };
 
 struct pipelinecache pipeline_array[PIPELINE_SIZE];
@@ -68,7 +67,7 @@ int get_eliminate() {
   return -1;
 }
 
-void freepipeline(struct pipelinecache* ptr) {
+void closewritefd(struct pipelinecache* ptr) {
   close(ptr->pipe_fd[1]);
 }
 
@@ -91,7 +90,7 @@ void createpipeline(int index, int eliminate_val) {
   if (-1 == eliminate_val) {
     // 释放最后一个pipeline
     struct pipelinecache* prev_ptr = &pipeline_array[index - 1];
-    freepipeline(prev_ptr);
+    closewritefd(prev_ptr);
     return;
   }
 
@@ -110,7 +109,7 @@ void createpipeline(int index, int eliminate_val) {
     readforkpipe(ptr);
   } else {
     writeforkpipe(ptr);
-    freepipeline(ptr);
+    closewritefd(ptr);
     // 先等待之前的进程结束，然后还需要主动exit
     wait(&ptr->this_pid);
     exit(0);
