@@ -49,6 +49,7 @@ ls(char *path)
     break;
 
   case T_DIR:
+    // 想在buf中装下 path 和 DIRSIZ
     if(strlen(path) + 1 + DIRSIZ + 1 > sizeof buf){
       printf("ls: path too long\n");
       break;
@@ -57,6 +58,7 @@ ls(char *path)
     p = buf+strlen(buf);
     *p++ = '/';
     while(read(fd, &de, sizeof(de)) == sizeof(de)){
+      // inum为0，表示这是一个空的DIR,没有被使用
       if(de.inum == 0)
         continue;
       memmove(p, de.name, DIRSIZ);
