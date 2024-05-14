@@ -1,0 +1,24 @@
+1. first syscall from usertrap
+
+2. a7 is 7, define SYS_exec val
+
+3. SSTATUS_SPP (1L << 8)  // Previous mode, 1=Supervisor, 0=User
+   SSTATUS_SPIE (1L << 5)
+   SSTATUS_SIE (1L << 1)
+   0x22
+   User mode
+
+4.   num = *(int*)0;
+    80002050:	00002683   lw	a3,0(zero) # 0 <_entry-0x80000000>
+
+    register: a3
+
+5. Why does the kernel crash?
+
+   scause 0x000000000000000d
+   Load page fault
+   0 地址在内核地址空间中无映射
+
+6. p->name  initcode
+   p->pid   1
+
