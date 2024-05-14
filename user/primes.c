@@ -111,7 +111,7 @@ void createpipeline(int index, int eliminate_val) {
     writeforkpipe(ptr);
     closewritefd(ptr);
     // 先等待之前的进程结束，然后还需要主动exit
-    wait(&ptr->this_pid);
+    wait(0);
     exit(0);
   }
 }

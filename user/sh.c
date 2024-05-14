@@ -128,7 +128,7 @@ runcmd(struct cmd *cmd)
       runcmd(bcmd->cmd);
     break;
   }
-  exit(0);
+  exit(0);  // 重要，子进程会在runcmd中关闭
 }
 
 int
