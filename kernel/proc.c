@@ -12,6 +12,7 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+int usedprocnum = 0;  // protected by pid_lock;
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -97,6 +98,7 @@ allocpid()
   acquire(&pid_lock);
   pid = nextpid;
   nextpid = nextpid + 1;
+  usedprocnum += 1;
   release(&pid_lock);
 
   return pid;
@@ -170,6 +172,10 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  acquire(&pid_lock);
+  usedprocnum -= 1;
+  release(&pid_lock);
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -687,4 +693,12 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64 getusedprocnum() {
+  uint64 proc_num;
+  acquire(&pid_lock);
+  proc_num = usedprocnum;
+  release(&pid_lock);
+  return proc_num;
 }

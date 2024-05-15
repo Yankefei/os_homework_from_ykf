@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -106,4 +107,33 @@ uint64 sys_trace(void)
   // release(&p->lock);
 
   return 0;
+}
+
+int argsysinfo(uint64 sinfo_addr) {
+  struct sysinfo  sys_info;
+  sys_info.freemem = getkfreemem();
+  sys_info.nproc = getusedprocnum();
+
+  struct proc *p = myproc();
+  // 将sys_info 这个存在于内核空间的数据，拷贝到 sinfo_addr 指向的用户空间中
+  // printf("sinfo_addr: %p, sys_info: %p\n", (char*)sinfo_addr, &sys_info);
+  if (copyout(p->pagetable, sinfo_addr, (char*)&sys_info, sizeof(struct sysinfo)) < 0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+/**
+ *
+ struct sysinfo {
+  uint64 freemem;   // amount of free memory (bytes)
+  uint64 nproc;     // number of process
+ };
+ */
+
+uint64 sys_sysinfo(void) {
+  uint64 sinfo = 0;
+  argaddr(0, &sinfo);
+  return argsysinfo(sinfo);
 }

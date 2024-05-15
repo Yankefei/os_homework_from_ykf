@@ -21,6 +21,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  uint64 freememory;
 } kmem;
 
 void
@@ -37,6 +38,14 @@ freerange(void *pa_start, void *pa_end)
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
+}
+
+uint64 getkfreemem() {
+  uint64 freememory;
+  acquire(&kmem.lock);
+  freememory = kmem.freememory;
+  release(&kmem.lock);
+  return freememory;
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -59,6 +68,7 @@ kfree(void *pa)
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
+  kmem.freememory += PGSIZE;
   release(&kmem.lock);
 }
 
@@ -72,8 +82,11 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    if (kmem.freememory >= PGSIZE)
+      kmem.freememory -= PGSIZE;
+  }
   release(&kmem.lock);
 
   if(r)
