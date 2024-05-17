@@ -74,7 +74,7 @@ sys_sleep(void)
 #define MAX_PAGE_NAME 1024
 
 int vm_pgaccess(uint64 addr, int page_size, char* dst) {
-  if (page_size > 1024) {
+  if (page_size > MAX_PAGE_NAME) {
     printf("page_size is overlength\n");
     return -1;
   }
@@ -90,7 +90,7 @@ int vm_pgaccess(uint64 addr, int page_size, char* dst) {
       return -1;
     }
 
-    if (i > 0 &&i % 8 == 0)
+    if (i > 0 && i % 8 == 0)
       dst += 1;
 
     pte = walk(p->pagetable, va0, 0);
