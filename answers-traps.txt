@@ -1,0 +1,86 @@
+int g(int x) {
+   0:	1141                	addi	sp,sp,-16
+   2:	e422                	sd	s0,8(sp)
+   4:	0800                	addi	s0,sp,16
+  return x+3;
+}
+   6:	250d                	addiw	a0,a0,3
+   8:	6422                	ld	s0,8(sp)
+   a:	0141                	addi	sp,sp,16
+   c:	8082                	ret
+
+000000000000000e <f>:
+
+int f(int x) {
+   e:	1141                	addi	sp,sp,-16
+  10:	e422                	sd	s0,8(sp)
+  12:	0800                	addi	s0,sp,16
+  return g(x);
+}
+  14:	250d                	addiw	a0,a0,3  # 这里直接省略了g函数的调用
+  16:	6422                	ld	s0,8(sp)
+  18:	0141                	addi	sp,sp,16
+  1a:	8082                	ret
+
+000000000000001c <main>:
+
+void main(void) {
+  1c:	1141                	addi	sp,sp,-16
+  1e:	e406                	sd	ra,8(sp)
+  20:	e022                	sd	s0,0(sp)
+  22:	0800                	addi	s0,sp,16
+  printf("%d %d\n", f(8)+1, 13);
+  24:	4635                	li	a2,13
+  26:	45b1                	li	a1,12  # 8 + 3 + 1 = 12, 直接跳过了调用，计算出了结果
+  28:	00000517          	auipc	a0,0x0
+  2c:	7c850513          	addi	a0,a0,1992 # 7f0 <malloc+0xf0>
+  30:	00000097          	auipc	ra,0x0
+  34:	612080e7          	jalr	1554(ra) # 642 <printf>
+  exit(0);
+  38:	4501                	li	a0,0
+  3a:	00000097          	auipc	ra,0x0
+  3e:	290080e7          	jalr	656(ra) # 2ca <exit>
+
+
+
+Question
+1:
+  a0  a1  a2， a2 hold 13
+
+2. not call f() and g()
+
+3. 642
+
+4. 38
+
+5.
+
+Little-Endian
+
+unsigned int i = 0x00646c72;
+//  0000 0000    0110 0100    0110 1100    0111 0010
+
+//  0111 0010   0x72 'r'
+//  0110 1100   0x6c 'l'
+//  0110 0100   0x64 'd'
+printf("H%x Wo%s", 57616, &i);   // HEll0 World
+
+
+Big-Endian
+uint i = xxx;
+printf("H%x Wo%s", 57616, &i);    // HEllo World
+
+57616 是不需要修改的
+i  修改为：0x726C6400
+
+6.
+
+  printf("x=%d y=%d", 3);
+  38:	458d                	li	a1,3
+  3a:	00000517          	auipc	a0,0x0
+  3e:	7ce50513          	addi	a0,a0,1998 # 808 <malloc+0xf6>
+  42:	00000097          	auipc	ra,0x0
+  46:	612080e7          	jalr	1554(ra) # 654 <printf>
+
+
+printf("x=%d y=%d", 3);   y= a2 寄存器里面残留的值, 代码中，a2 里面没有赋值
