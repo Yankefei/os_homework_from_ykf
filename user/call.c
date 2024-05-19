@@ -29,7 +29,7 @@ void main(void) {
   56:	00000097          	auipc	ra,0x0
   5a:	612080e7          	jalr	1554(ra) # 668 <printf>
 */
-  // printf("x=%d y=%d\n", 3);  //  a2 寄存器的历史值
+  printf("x=%d y=%d\n", 3);  //  a2 寄存器的历史值
 
   exit(0);
 }
