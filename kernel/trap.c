@@ -67,6 +67,18 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+    if(which_dev == 2 && myproc() != 0) {
+      struct sig* sig_ptr = &myproc()->sig;
+      if (sig_ptr->ticks_interval) {
+        // 间隔时间进入，而且在执行过程中，暂时不能重复进入
+        if (sig_ptr->ticks_pass % sig_ptr->ticks_interval == 0 && sig_ptr->ticks_trigger != 1) {
+          memmove(p->trapframe->cache_buf, &(p->trapframe->epc), 264);
+          p->trapframe->epc = (uint64)sig_ptr->alarm_handle;
+          sig_ptr->ticks_trigger = 1;
+        }
+        sig_ptr->ticks_pass ++;
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

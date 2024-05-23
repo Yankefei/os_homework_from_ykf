@@ -137,6 +137,8 @@ test2()
     }
     exit(0);
   }
+  // 为什么进入wait后，test1()的 sigalarm 没有继续触发了？
+  // 因为wait 会进入内核态，是不会触发 usertrap 的
   wait(&status);
   if (status == 0) {
     printf("test2 passed\n");
@@ -155,6 +157,12 @@ slow_handler()
   for (int i = 0; i < 1000*500000; i++) {
     asm volatile("nop"); // avoid compiler optimizing away loop
   }
+  // 增加超长耗时的打印，也不会触发
+  // for(int i = 0; i < 1000*500000; i++){
+  //   if((i % 100000) == 0)
+  //     write(2, "0", 1);
+  // }
+
   sigalarm(0, 0);
   sigreturn();
 }
@@ -172,6 +180,7 @@ dummy_handler()
 //
 // tests that the return from sys_sigreturn() does not
 // modify the a0 register
+// 所以这个test也提示我们，需要从sigreturn直接切换epc, 而不是让它返回, 如果返回，a0 肯定为0
 void
 test3()
 {
@@ -180,12 +189,26 @@ test3()
   sigalarm(1, dummy_handler);
   printf("test3 start\n");
 
+  /*
+  这行汇编指令将寄存器 a5 的高20位清零。lui 指令用于加载一个立即数到寄存器的高20位，这里加载的值是 0
+  */
   asm volatile("lui a5, 0");
+  /*
+  addi a0, a5, 0xac：将寄存器 a5 的值加上立即数 0xac 并将结果存储到寄存器 a0 中。由于之前 a5 的值是 0，所以 a0 将被赋值为 0xac（即十六进制的172）。
+  : : : "a0"：告诉编译器在这条指令后 a0 寄存器的值可能被改变。
+  */
   asm volatile("addi a0, a5, 0xac" : : : "a0");
   for(int i = 0; i < 500000000; i++)
     ;
   asm volatile("mv %0, a0" : "=r" (a0) );
 
+  /*
+  上面的语句：
+  使用汇编指令将寄存器 a5 的高20位清零。
+  将寄存器 a5 的值（0）加上立即数 0xac（十六进制172），结果存储在寄存器 a0 中。
+  执行一个无操作的空循环5亿次，引入延迟。
+  将寄存器 a0 的值复制到C变量 a0 中。
+  */
   if(a0 != 0xac)
     printf("test3 failed: register a0 changed\n");
   else

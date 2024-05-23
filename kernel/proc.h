@@ -44,42 +44,51 @@ struct trapframe {
   /*   0 */ uint64 kernel_satp;   // kernel page table
   /*   8 */ uint64 kernel_sp;     // top of process's kernel stack
   /*  16 */ uint64 kernel_trap;   // usertrap()
-  /*  24 */ uint64 epc;           // saved user program counter
+  /*  24 */ uint64 epc;           // saved user program counter *
   /*  32 */ uint64 kernel_hartid; // saved kernel tp
-  /*  40 */ uint64 ra;
-  /*  48 */ uint64 sp;
+  /*  40 */ uint64 ra;   // caller *
+  /*  48 */ uint64 sp;   // *
   /*  56 */ uint64 gp;
   /*  64 */ uint64 tp;
-  /*  72 */ uint64 t0;
-  /*  80 */ uint64 t1;
-  /*  88 */ uint64 t2;
-  /*  96 */ uint64 s0;
-  /* 104 */ uint64 s1;
-  /* 112 */ uint64 a0;
-  /* 120 */ uint64 a1;
-  /* 128 */ uint64 a2;
-  /* 136 */ uint64 a3;
-  /* 144 */ uint64 a4;
-  /* 152 */ uint64 a5;
-  /* 160 */ uint64 a6;
-  /* 168 */ uint64 a7;
-  /* 176 */ uint64 s2;
-  /* 184 */ uint64 s3;
-  /* 192 */ uint64 s4;
-  /* 200 */ uint64 s5;
+  /*  72 */ uint64 t0;   // caller
+  /*  80 */ uint64 t1;   // caller
+  /*  88 */ uint64 t2;   // caller
+  /*  96 */ uint64 s0;  // fp *
+  /* 104 */ uint64 s1;  // *
+  /* 112 */ uint64 a0;  // a0 is different caller *
+  /* 120 */ uint64 a1;  // caller *
+  /* 128 */ uint64 a2;  // caller *
+  /* 136 */ uint64 a3;  // caller *
+  /* 144 */ uint64 a4;  // caller *
+  /* 152 */ uint64 a5;  // caller *
+  /* 160 */ uint64 a6;  // caller *
+  /* 168 */ uint64 a7;  // caller *
+  /* 176 */ uint64 s2;  // *
+  /* 184 */ uint64 s3;  // *
+  /* 192 */ uint64 s4;  // *
+  /* 200 */ uint64 s5;  // *
   /* 208 */ uint64 s6;
   /* 216 */ uint64 s7;
   /* 224 */ uint64 s8;
   /* 232 */ uint64 s9;
   /* 240 */ uint64 s10;
   /* 248 */ uint64 s11;
-  /* 256 */ uint64 t3;
-  /* 264 */ uint64 t4;
-  /* 272 */ uint64 t5;
-  /* 280 */ uint64 t6;
+  /* 256 */ uint64 t3;  // caller
+  /* 264 */ uint64 t4;  // caller
+  /* 272 */ uint64 t5;  // caller
+  /* 280 */ uint64 t6;  // caller
+
+  char cache_buf[264];  // epc -- t6: 33
 };
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
+struct sig {
+  int ticks_interval;
+  int ticks_pass;
+  void (*alarm_handle)();
+  int ticks_trigger;
+};
 
 // Per-process state
 struct proc {
@@ -104,4 +113,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct sig sig;              // alarm
 };
