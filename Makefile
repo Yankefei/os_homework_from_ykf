@@ -265,12 +265,14 @@ fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
 
 -include kernel/*.d user/*.d
 
-clean:
-	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg *.dSYM *.zip \
+clean: 
+	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
-	$U/initcode $U/initcode.out $K/kernel $U/usys.S \
-	mkfs/mkfs fs.img .gdbinit \
+	$U/initcode $U/initcode.out $K/kernel fs.img \
+	mkfs/mkfs .gdbinit \
+        $U/usys.S \
 	$(UPROGS) \
+	*.zip \
 	ph barrier
 
 # try to generate a unique GDB port
