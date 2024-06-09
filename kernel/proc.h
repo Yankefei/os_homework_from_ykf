@@ -94,6 +94,11 @@ struct proc {
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
+  /**
+   * 当父进程的page被写入后，需要同时通知所有子进程的对应page来创建
+  */
+  struct proc* cow_child_list[NPROC];  // 最多支持 NPROC 个child proc的记录，用于cow的恢复处理
+  int cow_child_num;
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack

@@ -20,6 +20,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+int d_save_page_num = 0;
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -124,6 +126,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->cow_child_num = 0;
+  for (int i = 0; i < NPROC; i++) {
+    p->cow_child_list[i] = 0;
+  }
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -160,6 +166,16 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+
+  struct proc* pp = p->parent;
+  for (int i = 0; i < NPROC; i++) {
+    if (pp->cow_child_list[i] == p) {
+      pp->cow_child_list[i] = 0;
+      pp->cow_child_num --;
+      break;
+    }
+  }
+
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -271,6 +287,7 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+  // printf("after growproc, new sz: %d, d_save_page_num: %d, n %d\n", p->sz, d_save_page_num, n);
   return 0;
 }
 
@@ -316,12 +333,19 @@ fork(void)
 
   acquire(&wait_lock);
   np->parent = p;
+  for (int i = 0; i < NPROC; i++) {
+    if (p->cow_child_list[i] == 0) {
+      p->cow_child_list[i] = np;
+      p->cow_child_num ++;
+      break;
+    }
+  }
   release(&wait_lock);
 
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
-
+  // printf("fork, new process: %d\n", pid);
   return pid;
 }
 
@@ -335,6 +359,16 @@ reparent(struct proc *p)
   for(pp = proc; pp < &proc[NPROC]; pp++){
     if(pp->parent == p){
       pp->parent = initproc;
+      for (int i = 0; i < NPROC; i++) {
+        if (initproc->cow_child_list[i] == 0) {
+          initproc->cow_child_list[i] = pp;
+          initproc->cow_child_num ++;
+        }
+        if (p->cow_child_list[i] == pp) {
+          p->cow_child_list[i] = 0;
+          p->cow_child_num --;
+        }
+      }
       wakeup(initproc);
     }
   }
@@ -412,6 +446,7 @@ wait(uint64 addr)
                                   sizeof(pp->xstate)) < 0) {
             release(&pp->lock);
             release(&wait_lock);
+            printf("^^^^^wait failed, p: %d\n", p->pid);
             return -1;
           }
           freeproc(pp);

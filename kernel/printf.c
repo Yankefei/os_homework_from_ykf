@@ -122,6 +122,8 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  growproc(0);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -132,4 +134,30 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+
+// 如何确定栈帧返回值ra的地址？
+// 当前栈帧的返回值没有地方保存，直接获取即可
+// 之前栈帧的返回值，可以跟进栈帧来进行推算
+void backtrace() {
+  uint64 fp, last_fp, last_ra, page_aligned;
+
+  // 因为backtrace应该是定位到调用函数的行，而不是下一行
+  // 所以地址应该 - 4， 但是测试发现，并不能完全匹配，故放弃
+  printf("%p\n", r_ra());
+  fp = r_fp();
+  page_aligned = PGROUNDUP(fp);
+  // 因为backtrace里面存在printf的函数调用，所以上一个栈帧
+  // 的偏移量不会是8，只能是16
+  fp = *(uint64*)(fp - 16);
+
+  // 只能小于，不能等于, 因为第一个堆栈 fp == page_aligned
+  while(fp < page_aligned) {
+    // last frame
+    last_ra = *(uint64*)(fp - 8);
+    printf("%p\n", last_ra);
+    last_fp = *(uint64*)(fp - 16);
+    fp = last_fp;
+  }
 }

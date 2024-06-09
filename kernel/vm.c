@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -154,7 +156,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
   if(size == 0)
     panic("mappages: size");
-  
+
   a = va;
   last = va + size - PGSIZE;
   for(;;){
@@ -251,6 +253,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+    // printf("uvmalloc, pa: %p\n", mem);
   }
   return newsz;
 }
@@ -303,6 +306,61 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+#if 1
+// cow version
+// returns 0 on success, -1 on failure.
+// frees any allocated pages on failure.
+int
+uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+{
+  uint flags;
+  pte_t* pte;
+  uint64 pa, i;
+  for (i = 0; i < sz; i += PGSIZE) {
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+
+    flags = PTE_FLAGS(*pte);
+    if (*pte & PTE_W) {
+      // printf("writeable pa: %p, va: %p\n", *pte, i);
+      // 只对可写的部分做剔除，并使用 PTE_HIDE_W 标记
+      *pte = *pte & ~PTE_W;
+      *pte = *pte | PTE_HIDE_W;
+      // child
+      flags = flags & ~PTE_W;
+      flags = flags | PTE_COW;
+    } else if (*pte & PTE_HIDE_W) {
+      if (*pte & PTE_W || *pte & PTE_COW)
+        panic("uvmcopy: parent PTE_HIDE_W");
+      // child
+      flags = flags | PTE_COW;
+      flags = flags & ~PTE_HIDE_W;
+    } else if (*pte & PTE_COW) {
+      // child
+      // nothing
+      if (*pte & PTE_W || *pte & PTE_HIDE_W)
+        panic("uvmcopy: parent PTE_COW");
+    }
+
+    pa = PTE2PA(*pte);
+    // printf("pa : %x\n", flags);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      goto err;
+    }
+    // printf("uvmcopy: flags: %x\n", flags);
+    addkllocref(pa);
+  }
+  return 0;
+
+  // printf("finish cow version: uvmcopy\n");
+err:
+  return -1;
+}
+#endif
+
+#if 0
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -327,6 +385,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
+    printf("uvmcopy: falgs: %x\n", flags);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;
@@ -338,6 +397,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
+#endif
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
@@ -367,8 +427,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       return -1;
     pte = walk(pagetable, va0, 0);
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
-      return -1;
+       (*pte & PTE_W) == 0) {
+      if ( pte != 0 && (*pte & PTE_V) && (*pte & PTE_U)) {
+        struct proc *p = myproc();
+        if (copycowpage(p, va0, 0) != 0) {
+          return -1;
+        }
+      } else {
+        return -1;
+      }
+    }
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
@@ -448,4 +516,144 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int copycowpage(struct proc* p, uint64 stval, int child) {
+  uint flags;
+  uint64 pa;
+  char *mem;
+  pte_t* pte;
+
+  if (stval >= MAXVA) {
+    return -1;
+  }
+
+  uint64 va = PGROUNDDOWN(stval);
+  // uint64 va = PGROUNDUP(stval);
+  pagetable_t pagetable = p->pagetable;
+
+  if ((pte = walk(pagetable, va, 0)) == 0) {
+    printf("copycowpage walk failed, va: %p, stval: %p\n", va, stval);
+    return -1;
+  }
+
+  // 加锁
+  acquire(&p->lock);
+  flags = PTE_FLAGS(*pte);
+  if (*pte & PTE_HIDE_W) {
+    // HIDE_W
+    *pte &= ~PTE_HIDE_W;
+    *pte |= PTE_W;
+  } else {
+    // COW
+    if ((*pte & PTE_COW) == 0) {
+      // 有可能处理的过程中，子进程的缺页处理已经启动了，所以这里统一进行预判和处理
+      if ((*pte & PTE_W) && (*pte & PTE_V)) {
+        release(&p->lock);
+        return 0;
+      }
+      // if (child)
+      //   release(&p->lock);
+      //   return 0;
+      // }
+      printf("copycowpage can't find cow pte. %x, stval: %p, pid: %d, %p:%p\n", flags, stval, p->pid, PTE2PA(*pte), *(char*)(PTE2PA(*pte)));
+      // vmprint(pagetable);
+      // panic("copycowpage can't find cow pte");
+      release(&p->lock);
+      return -1;
+    }
+
+    pa = PTE2PA(*pte);
+    // printf("trapcopy, va: %p, pa: %p, pid: %d\n", va, pa, p->pid);
+    if((mem = kalloc()) == 0) {
+      printf("copycowpage kalloc failed\n");
+      release(&p->lock);
+      // todo kill
+      return -1;
+    }
+    memmove(mem, (char*)pa, PGSIZE);
+    kfree((void*)pa);
+
+    // if (!child) {
+      flags &= ~PTE_COW;
+      flags |= PTE_W;
+     *pte = PA2PTE((uint64)mem) | flags;
+    // } else {
+    //   // 暂时先设置为不可写的状态
+    //   // 为啥？
+    //   // 避免子进程正在执行写状态， 还需要加锁
+    //   flags &= ~PTE_COW;
+    //   flags |= PTE_HIDE_W;
+    //   *pte = PA2PTE((uint64)mem) | flags;
+    // }
+  }
+
+  release(&p->lock);
+
+  int count = 0;
+  for (int i = 0; i < NPROC; i++) {
+    if (p->cow_child_num < count) {
+      printf("cow_child_num: %d, count: %d, pid: %d\n", p->cow_child_num, count, p->pid);
+      panic("copycowpage handle cow_cild_num");
+      break;
+    }
+
+    struct proc* child_p = p->cow_child_list[i];
+    if(child_p != 0) {
+      if (child_p->state == ZOMBIE)
+        continue;
+      count ++;
+      copycowpage(child_p, va, 1);
+    }
+  }
+
+
+  return 0;
+}
+
+
+/**
+page table 0x0000000087f6b000
+ ..0: pte 0x0000000021fd9c01 pa 0x0000000087f67000
+ .. ..0: pte 0x0000000021fd9801 pa 0x0000000087f66000
+ .. .. ..0: pte 0x0000000021fda01b pa 0x0000000087f68000
+ .. .. ..1: pte 0x0000000021fd9417 pa 0x0000000087f65000
+ .. .. ..2: pte 0x0000000021fd9007 pa 0x0000000087f64000
+ .. .. ..3: pte 0x0000000021fd8c17 pa 0x0000000087f63000
+ ..255: pte 0x0000000021fda801 pa 0x0000000087f6a000
+ .. ..511: pte 0x0000000021fda401 pa 0x0000000087f69000
+ .. .. ..509: pte 0x0000000021fdcc13 pa 0x0000000087f73000
+ .. .. ..510: pte 0x0000000021fdd007 pa 0x0000000087f74000
+ .. .. ..511: pte 0x0000000020001c0b pa 0x0000000080007000
+init: starting sh
+*/
+
+static char* level_fmt[] = {
+  [1]   "..",
+  [2]   ".. ..",
+  [3]   ".. .. .."
+};
+
+void printwalk(pagetable_t pagetable, int level) {
+  for (int i = 0; i < 512; i ++) {
+    pte_t pte = pagetable[i];
+
+    if ((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+      // 非叶子节点
+      uint64 child = PTE2PA(pte);
+      printf("%s%d: pte %p pa %p\n",
+              level_fmt[level], i/*PTE_FLAGS(pte)*/, pte, child);
+      printwalk((pagetable_t)child, level + 1);
+    } else if (pte & PTE_V) {
+      // 叶子节点
+      uint64 child = PTE2PA(pte);
+      printf("%s%d: pte %p pa %p\n",
+              level_fmt[level], i/*PTE_FLAGS(pte)*/, pte, child);
+    }
+  }
+}
+
+void vmprint(pagetable_t ptr) {
+  printf("page table %p\n", ptr);
+  printwalk(ptr, 1);
 }

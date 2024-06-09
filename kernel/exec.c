@@ -83,6 +83,7 @@ exec(char *path, char **argv)
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE, PTE_W)) == 0)
     goto bad;
   sz = sz1;
+  // printf("exec, stack top: %p\n", sz);
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
   stackbase = sp - PGSIZE;
@@ -128,6 +129,7 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  // printf("exec finish, %s\n", p->name);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

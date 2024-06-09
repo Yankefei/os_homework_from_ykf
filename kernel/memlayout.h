@@ -62,3 +62,8 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+// PAGE: 4096
+#define USER_PAGE_NUM  32 * 1024
+
+#define GET_USER_PAGE_NUM(pa)  (((pa) - KERNBASE) >> 12)
