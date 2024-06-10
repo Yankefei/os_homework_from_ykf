@@ -17,6 +17,7 @@ extern char end[]; // first address after kernel.
 // start from KERNBASE to PHYSTOP
 uint8 mem_alloc_ref[USER_PAGE_NUM];
 extern int d_save_page_num;
+int d_alloc_empty = 0;
 
 struct run {
   struct run *next;
@@ -24,6 +25,7 @@ struct run {
 
 struct {
   struct spinlock lock;
+  struct spinlock alloc_ref_lock;
   struct run *freelist;
 } kmem;
 
@@ -31,6 +33,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&kmem.alloc_ref_lock, "alloc_ref_lock");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -59,14 +62,21 @@ kfree(void *pa)
     panic("kfree");
 
   int page_num = GET_USER_PAGE_NUM((uint64)pa);
-  if (mem_alloc_ref[page_num] == 0)
-    panic("kfree ref");
+  acquire(&kmem.alloc_ref_lock);
+  if (mem_alloc_ref[page_num] == 0) {
+    // 不可能进入这里
+    printf("kfree ref, d_alloc_empty: %d, d_save_page_num: %d\n", d_alloc_empty, d_save_page_num);
+    release(&kmem.alloc_ref_lock);
+    return;
+  }
 
   mem_alloc_ref[page_num] --;
   if (mem_alloc_ref[page_num] > 0) {
-    // printf("empty kfree...%p \n", pa);
+    release(&kmem.alloc_ref_lock);
     return;
   }
+
+  release(&kmem.alloc_ref_lock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -95,25 +105,37 @@ kalloc(void)
   release(&kmem.lock);
 
   if(r) {
+    acquire(&kmem.alloc_ref_lock);
     memset((char*)r, 5, PGSIZE); // fill with junk
     mem_alloc_ref[GET_USER_PAGE_NUM((uint64)r)] ++;
     d_save_page_num --;
+    release(&kmem.alloc_ref_lock);
     // if (d_save_page_num == 1000) {
     //   printf("d_save_page_num only  1000\n");
     // }
+  } else {
+    // 不可能存在 alloc为空的情况，这里只是增加调试日志而已
+    d_alloc_empty ++;
   }
 
   return (void*)r;
 }
 
-void addkllocref(uint64 pa) {
+int addkallocref(uint64 pa) {
   if (pa % PGSIZE != 0) {
-    panic("addkllocref not align");
+    panic("addkallocref not align");
   }
+
+  acquire(&kmem.alloc_ref_lock);
   int page_num = GET_USER_PAGE_NUM(pa);
   if (mem_alloc_ref[page_num] == 0) {
-    panic("addkllocref ref");
+    // 不可能进入这里
+    printf("addkallocref, ref is zero, %p, d_alloc_empty: %d, d_save_page_num: %d\n", pa, d_alloc_empty, d_save_page_num);
+    release(&kmem.alloc_ref_lock);
+    return -1;
   }
-  // printf(">>>>addkllocref, page_num: %d\n", page_num);
+  // printf(">>>>addkallocref, page_num: %d\n", page_num);
   mem_alloc_ref[page_num] ++;
+  release(&kmem.alloc_ref_lock);
+  return 0;
 }

@@ -168,11 +168,13 @@ freeproc(struct proc *p)
     proc_freepagetable(p->pagetable, p->sz);
 
   struct proc* pp = p->parent;
-  for (int i = 0; i < NPROC; i++) {
-    if (pp->cow_child_list[i] == p) {
-      pp->cow_child_list[i] = 0;
-      pp->cow_child_num --;
-      break;
+  if (pp) {
+    for (int i = 0; i < NPROC; i++) {
+      if (pp->cow_child_list[i] == p) {
+        pp->cow_child_list[i] = 0;
+        pp->cow_child_num --;
+        break;
+      }
     }
   }
 
@@ -305,6 +307,7 @@ fork(void)
     return -1;
   }
 
+  np->parent = 0;
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -357,18 +360,24 @@ reparent(struct proc *p)
   struct proc *pp;
 
   for(pp = proc; pp < &proc[NPROC]; pp++){
-    if(pp->parent == p){
+    // 不重复进入
+    if(pp->parent == p && pp->parent != initproc){
       pp->parent = initproc;
       for (int i = 0; i < NPROC; i++) {
         if (initproc->cow_child_list[i] == 0) {
           initproc->cow_child_list[i] = pp;
           initproc->cow_child_num ++;
+          break;
         }
+      }
+      for (int i = 0; i < NPROC; i++) {
         if (p->cow_child_list[i] == pp) {
           p->cow_child_list[i] = 0;
           p->cow_child_num --;
+          break;
         }
       }
+
       wakeup(initproc);
     }
   }
@@ -428,6 +437,10 @@ wait(uint64 addr)
   int havekids, pid;
   struct proc *p = myproc();
 
+  // 提前处理, 避免 wait_lock 在 copychildcowpage 中死锁
+  if (addr != 0)
+    copycowpage(p, addr, 0);
+
   acquire(&wait_lock);
 
   for(;;){
@@ -450,6 +463,17 @@ wait(uint64 addr)
             return -1;
           }
           freeproc(pp);
+          if(p == initproc) {
+            // if (p->cow_child_num == 0)
+            //   break;
+            for (int i = 0; i < NPROC; i++) {
+              if (p->cow_child_list[i] == pp) {
+                p->cow_child_list[i] = 0;
+                p->cow_child_num --;
+                break;
+              }
+            }
+          }
           release(&pp->lock);
           release(&wait_lock);
           return pid;
@@ -466,6 +490,32 @@ wait(uint64 addr)
     
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
+  }
+}
+
+void copychildcowpage(struct proc* p, uint64 va) {
+  int count = 0;
+  struct proc* p_array[NPROC];
+  acquire(&wait_lock);
+  for (int i = 0; i < NPROC; i++) {
+    if (p->cow_child_num < count) {
+      printf("cow_child_num: %d, count: %d, pid: %d\n", p->cow_child_num, count, p->pid);
+      panic("copycowpage handle cow_child_num");
+      break;
+    }
+
+    struct proc* child_p = p->cow_child_list[i];
+    if(child_p != 0) {
+      if (child_p->state == ZOMBIE)
+        continue;
+      p_array[count] = child_p;
+      count ++;
+    }
+  }
+  release(&wait_lock);
+
+  for (int i = 0; i < count; i++) {
+    copycowpage(p_array[i], va, 1);
   }
 }
 

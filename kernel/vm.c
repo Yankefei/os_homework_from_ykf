@@ -345,17 +345,30 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     }
 
     pa = PTE2PA(*pte);
-    // printf("pa : %x\n", flags);
-    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+
+    if (addkallocref(pa) == 0) {
+      // printf("pa : %x\n", flags);
+      if(mappages(new, i, PGSIZE, pa, flags) != 0){
+        goto err;
+      }
+    } else {
+      // 说明parent进程被释放了, 直接返回错误, fork 失败
       goto err;
     }
-    // printf("uvmcopy: flags: %x\n", flags);
-    addkllocref(pa);
+
   }
   return 0;
 
   // printf("finish cow version: uvmcopy\n");
 err:
+  // 回滚 mappages的操作
+  for (uint64 j = 0; j < i; j += PGSIZE) {
+    if((pte = walk(new, j, 0)) == 0)
+      panic("uvmcopy rollback: pte should exist");
+    *pte &= ~PTE_V;
+    pa = PTE2PA(*pte);
+    kfree((void*)pa);
+  }
   return -1;
 }
 #endif
@@ -572,41 +585,16 @@ int copycowpage(struct proc* p, uint64 stval, int child) {
       return -1;
     }
     memmove(mem, (char*)pa, PGSIZE);
-    kfree((void*)pa);
 
-    // if (!child) {
-      flags &= ~PTE_COW;
-      flags |= PTE_W;
-     *pte = PA2PTE((uint64)mem) | flags;
-    // } else {
-    //   // 暂时先设置为不可写的状态
-    //   // 为啥？
-    //   // 避免子进程正在执行写状态， 还需要加锁
-    //   flags &= ~PTE_COW;
-    //   flags |= PTE_HIDE_W;
-    //   *pte = PA2PTE((uint64)mem) | flags;
-    // }
+    flags &= ~PTE_COW;
+    flags |= PTE_W;
+    *pte = PA2PTE((uint64)mem) | flags;
+    kfree((void*)pa);
   }
 
   release(&p->lock);
 
-  int count = 0;
-  for (int i = 0; i < NPROC; i++) {
-    if (p->cow_child_num < count) {
-      printf("cow_child_num: %d, count: %d, pid: %d\n", p->cow_child_num, count, p->pid);
-      panic("copycowpage handle cow_cild_num");
-      break;
-    }
-
-    struct proc* child_p = p->cow_child_list[i];
-    if(child_p != 0) {
-      if (child_p->state == ZOMBIE)
-        continue;
-      count ++;
-      copycowpage(child_p, va, 1);
-    }
-  }
-
+  copychildcowpage(p, va);
 
   return 0;
 }
