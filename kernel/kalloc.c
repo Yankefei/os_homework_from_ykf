@@ -25,6 +25,7 @@ struct run {
 
 struct {
   struct spinlock lock;
+  // 必须增加，否则会导致kalloc异常，保护mem_alloc_ref
   struct spinlock alloc_ref_lock;
   struct run *freelist;
 } kmem;

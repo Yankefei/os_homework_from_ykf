@@ -307,6 +307,7 @@ fork(void)
     return -1;
   }
 
+  // 为了避免 uvmcopy失败，退出时异常，所增加的，一般不会进入
   np->parent = 0;
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
@@ -464,8 +465,7 @@ wait(uint64 addr)
           }
           freeproc(pp);
           if(p == initproc) {
-            // if (p->cow_child_num == 0)
-            //   break;
+            // 维护init proc 的cow_child_list
             for (int i = 0; i < NPROC; i++) {
               if (p->cow_child_list[i] == pp) {
                 p->cow_child_list[i] = 0;
@@ -514,6 +514,8 @@ void copychildcowpage(struct proc* p, uint64 va) {
   }
   release(&wait_lock);
 
+  // 避免 wait_lock 死锁，因为 copycowpage 也会继续调用 acquire(&wait_lock);
+  // p->cow_child_num 的操作必须加锁
   for (int i = 0; i < count; i++) {
     copycowpage(p_array[i], va, 1);
   }
