@@ -30,7 +30,25 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
-  
+
+  //  必须加锁，使用 pthread_cond_broadcast 和 pthread_cond_wait前，
+  //  之后，必须解锁
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  bstate.nthread ++;
+
+
+  if (nthread == bstate.nthread) {
+    // printf("ready to broadcast, i: %d, n: %d\n", i, n);
+    pthread_cond_broadcast(&bstate.barrier_cond);
+    bstate.round ++;
+    bstate.nthread = 0;
+  } else {
+    // pthread_cond_wait releases the mutex when called,
+    // and re-acquires the mutex before returning
+
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *
@@ -47,6 +65,7 @@ thread(void *xa)
     usleep(random() % 100);
   }
 
+  // printf("finish. i: %ld\n", n);
   return 0;
 }
 
