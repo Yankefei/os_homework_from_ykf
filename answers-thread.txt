@@ -1,0 +1,31 @@
+1. 
+
+static
+void put(int key, int value)
+{
+  int i = key % NBUCKET;  // 0 - 4
+
+  // is the key already present?
+  struct entry *e = 0;
+  for (e = table[i]; e != 0; e = e->next) {
+    if (e->key == key) {
+      printf("present: key: %d, val: %d\n", key, value);
+      break;
+    }
+  }
+  if(e){
+    // update the existing key.
+    e->value = value;
+  } else {
+    // the new is new.
+    insert(key, value, &table[i], table[i]);
+  }
+
+}
+
+上面的函数中，
+多线程调用时，i大概率存在一样，所以会访问同一个  table数组的指针, 可能存在同时
+判断next指针为空的情况，同时调用insert函数，
+会在获取table[i]的地址时，以及做头插，传入 &table[i]  和  table[i] 的时候都可能
+获取到生效的信息
+
