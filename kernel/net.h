@@ -172,3 +172,7 @@ struct dns_data {
   uint32 ttl;
   uint16 len;
 } __attribute__((packed));
+
+
+// todo
+// struct tcp {}
