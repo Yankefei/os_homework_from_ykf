@@ -11,6 +11,10 @@
 #include "proc.h"
 #include "defs.h"
 
+
+// kernel/pci.c contains code that searches for an E1000
+// card on the PCI bus when xv6 boots.
+// 如何加载一个硬件到PCI中
 void
 pci_init()
 {
@@ -45,6 +49,8 @@ pci_init()
 
         // writing all 1's to the BAR causes it to be
         // replaced with its size.
+        // BAR 配置
+        // 完成初始化（写1操作）之后，系统软件（BIOS/OS）便开始读取BAR的值，来确定每一个BAR对应的地址空间大小和类型。
         base[4+i] = 0xffffffff;
         __sync_synchronize();
 
@@ -53,6 +59,7 @@ pci_init()
 
       // tell the e1000 to reveal its registers at
       // physical address 0x40000000.
+      // e1000_regs 已经在内存 kpgtbl 完成了映射
       base[4+0] = e1000_regs;
 
       e1000_init((uint32*)e1000_regs);

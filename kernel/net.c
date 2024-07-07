@@ -15,6 +15,7 @@ static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15); // qemu's idea of the guest
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
 static uint8 broadcast_mac[ETHADDR_LEN] = { 0xFF, 0XFF, 0XFF, 0XFF, 0XFF, 0XFF };
 
+// pop_front
 // Strips data from the start of the buffer and returns a pointer to it.
 // Returns 0 if less than the full requested length is available.
 char *
@@ -28,6 +29,7 @@ mbufpull(struct mbuf *m, unsigned int len)
   return tmp;
 }
 
+// push_front
 // Prepends data to the beginning of the buffer and returns a pointer to it.
 char *
 mbufpush(struct mbuf *m, unsigned int len)
@@ -39,6 +41,7 @@ mbufpush(struct mbuf *m, unsigned int len)
   return m->head;
 }
 
+// push_front
 // Appends data to the end of the buffer and returns a pointer to it.
 char *
 mbufput(struct mbuf *m, unsigned int len)
@@ -50,6 +53,7 @@ mbufput(struct mbuf *m, unsigned int len)
   return tmp;
 }
 
+// pop_back
 // Strips data from the end of the buffer and returns a pointer to it.
 // Returns 0 if less than the full requested length is available.
 char *
@@ -150,11 +154,21 @@ in_cksum(const unsigned char *addr, int len)
     sum += answer;
   }
 
+  /**
+   * 这两行代码的目的是将32位sum中的高16位的进位部分加回到低16位，确保最终的sum只包含低16位的有效值。
+
+      第一行：(sum & 0xffff)保留sum的低16位，(sum >> 16)获取sum的高16位，然后将这两部分相加。
+      第二行：如果第一次相加后仍然有进位（高16位部分非零），再将进位部分加回低16位。
+  */
   /* add back carry outs from top 16 bits to low 16 bits */
   sum = (sum & 0xffff) + (sum >> 16);
   sum += (sum >> 16);
   /* guaranteed now that the lower 16 bits of sum are correct */
 
+
+  // 取sum的反码，并将其截断为16位。取反操作的目的是将和的值进行翻转，以便于校验。
+  // 如果数据在传输过程中没有错误，接收方对接收到的数据段再计算一次校验和时，加上这个取反的值，
+  // 其总和应该为0xFFFF。
   answer = ~sum; /* truncate to 16 bits */
   return answer;
 }
@@ -170,8 +184,12 @@ net_tx_eth(struct mbuf *m, uint16 ethtype)
   // In a real networking stack, dhost would be set to the address discovered
   // through ARP. Because we don't support enough of the ARP protocol, set it
   // to broadcast instead.
-  memmove(ethhdr->dhost, broadcast_mac, ETHADDR_LEN);
+  memmove(ethhdr->dhost, broadcast_mac, ETHADDR_LEN);  // dst
   ethhdr->type = htons(ethtype);
+  // 是异步接口
+  // 返回0， 不释放，正常行为
+  // 如果有异常，比如队列满了，那么不会返回0，比如 -1，则释放
+  // if (-1) == if (1) ?, yes
   if (e1000_transmit(m)) {
     mbuffree(m);
   }
@@ -223,7 +241,7 @@ net_tx_arp(uint16 op, uint8 dmac[ETHADDR_LEN], uint32 dip)
   struct mbuf *m;
   struct arp *arphdr;
 
-  m = mbufalloc(MBUF_DEFAULT_HEADROOM);
+  m = mbufalloc(MBUF_DEFAULT_HEADROOM); // 128
   if (!m)
     return -1;
 
@@ -250,6 +268,7 @@ net_tx_arp(uint16 op, uint8 dmac[ETHADDR_LEN], uint32 dip)
 static void
 net_rx_arp(struct mbuf *m)
 {
+  printf("net_rx_arp\n");
   struct arp *arphdr;
   uint8 smac[ETHADDR_LEN];
   uint32 sip, tip;
@@ -309,6 +328,7 @@ net_rx_udp(struct mbuf *m, uint16 len, struct ip *iphdr)
   sip = ntohl(iphdr->ip_src);
   sport = ntohs(udphdr->sport);
   dport = ntohs(udphdr->dport);
+  // printf("net_rx_udp,  dport: %d sport: %d\n", (int)dport, (int)sport);
   sockrecvudp(m, sip, dport, sport);
   return;
 
@@ -320,6 +340,7 @@ fail:
 static void
 net_rx_ip(struct mbuf *m)
 {
+  // printf("net_rx_ip\n");
   struct ip *iphdr;
   uint16 len;
 
@@ -368,7 +389,26 @@ void net_rx(struct mbuf *m)
   if (type == ETHTYPE_IP)
     net_rx_ip(m);
   else if (type == ETHTYPE_ARP)
-    net_rx_arp(m);
+    net_rx_arp(m); // todo
   else
     mbuffree(m);
+}
+
+
+void net_rx_print_type(struct mbuf *m) {
+  struct eth *ethhdr;
+  uint16 type;
+
+  ethhdr = mbufpullhdr(m, *ethhdr);
+  if (!ethhdr) {
+    return;
+  }
+
+  type = ntohs(ethhdr->type);
+  if (type == ETHTYPE_IP)
+    printf("  ip");
+  else if (type == ETHTYPE_ARP)
+    printf("  arp");
+  else
+    printf("  unknown");
 }

@@ -9,7 +9,7 @@ struct mbuf {
   struct mbuf  *next; // the next mbuf in the chain
   char         *head; // the current start position of the buffer
   unsigned int len;   // the length of the buffer
-  char         buf[MBUF_SIZE]; // the backing store
+  char         buf[MBUF_SIZE]; // the backing store  2k
 };
 
 char *mbufpull(struct mbuf *m, unsigned int len);
@@ -25,6 +25,7 @@ char *mbuftrim(struct mbuf *m, unsigned int len);
 //
 // These marcos automatically typecast and determine the size of header structs.
 // In most situations you should use these instead of the raw ops above.
+// 它可以取得变量的类型，或者表达式的类型
 #define mbufpullhdr(mbuf, hdr) (typeof(hdr)*)mbufpull(mbuf, sizeof(hdr))
 #define mbufpushhdr(mbuf, hdr) (typeof(hdr)*)mbufpush(mbuf, sizeof(hdr))
 #define mbufputhdr(mbuf, hdr) (typeof(hdr)*)mbufput(mbuf, sizeof(hdr))

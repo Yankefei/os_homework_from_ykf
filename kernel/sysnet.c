@@ -20,11 +20,11 @@ struct sock {
   uint16 lport;      // the local UDP port number
   uint16 rport;      // the remote UDP port number
   struct spinlock lock; // protects the rxq
-  struct mbufq rxq;  // a queue of packets waiting to be received
+  struct mbufq rxq;  // a queue of packets waiting to be received, cache
 };
 
 static struct spinlock lock;
-static struct sock *sockets;
+static struct sock *sockets; // sock list,  头插
 
 void
 sockinit(void)
@@ -58,6 +58,7 @@ sockalloc(struct file **f, uint32 raddr, uint16 lport, uint16 rport)
   // add to list of sockets
   acquire(&lock);
   pos = sockets;
+  // 校验重复
   while (pos) {
     if (pos->raddr == raddr &&
         pos->lport == lport &&
@@ -83,7 +84,7 @@ bad:
 void
 sockclose(struct sock *si)
 {
-  struct sock **pos;
+  struct sock **pos; // good
   struct mbuf *m;
 
   // remove from list of sockets
@@ -126,6 +127,7 @@ sockread(struct sock *si, uint64 addr, int n)
   release(&si->lock);
 
   len = m->len;
+  // read again?
   if (len > n)
     len = n;
   if (copyout(pr->pagetable, addr, m->head, len) == -1) {
@@ -155,6 +157,7 @@ sockwrite(struct sock *si, uint64 addr, int n)
 }
 
 // called by protocol handler layer to deliver UDP packets
+// 异步读取
 void
 sockrecvudp(struct mbuf *m, uint32 raddr, uint16 lport, uint16 rport)
 {
