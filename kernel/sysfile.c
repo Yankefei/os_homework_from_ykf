@@ -521,6 +521,8 @@ sys_connect(void)
 
   if(sockalloc(&f, raddr, lport, rport) < 0)
     return -1;
+
+  // 返回一个未用的文件描述符
   if((fd=fdalloc(f)) < 0){
     fileclose(f);
     return -1;

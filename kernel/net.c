@@ -41,12 +41,12 @@ mbufpush(struct mbuf *m, unsigned int len)
   return m->head;
 }
 
-// push_front
+// push_back
 // Appends data to the end of the buffer and returns a pointer to it.
 char *
 mbufput(struct mbuf *m, unsigned int len)
 {
-  char *tmp = m->head + m->len;
+  char *tmp = m->head + m->len; // 获取旧的header，并在后面返回
   m->len += len;
   if (m->len > MBUF_SIZE)
     panic("mbufput");
@@ -225,6 +225,7 @@ net_tx_udp(struct mbuf *m, uint32 dip,
 
   // put the UDP header
   udphdr = mbufpushhdr(m, *udphdr);
+  // 发送时，直接携带 sport 和 dport
   udphdr->sport = htons(sport);
   udphdr->dport = htons(dport);
   udphdr->ulen = htons(m->len);
@@ -268,7 +269,7 @@ net_tx_arp(uint16 op, uint8 dmac[ETHADDR_LEN], uint32 dip)
 static void
 net_rx_arp(struct mbuf *m)
 {
-  printf("net_rx_arp\n");
+  // printf("net_rx_arp\n");
   struct arp *arphdr;
   uint8 smac[ETHADDR_LEN];
   uint32 sip, tip;

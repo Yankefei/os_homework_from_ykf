@@ -2,7 +2,7 @@ import socket
 import sys
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-addr = ('localhost', int(sys.argv[1]))
+addr = ('localhost', int(sys.argv[1]))  # 26099
 print('listening on %s port %s' % addr, file=sys.stderr)
 sock.bind(addr)
 

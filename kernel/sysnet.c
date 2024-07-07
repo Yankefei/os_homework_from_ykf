@@ -32,6 +32,9 @@ sockinit(void)
   initlock(&lock, "socktbl");
 }
 
+/**
+ * @brief 只涉及到创建socket结构体，并完成 next socket队列，以及 rxq 的初始化工作
+*/
 int
 sockalloc(struct file **f, uint32 raddr, uint16 lport, uint16 rport)
 {
@@ -62,7 +65,7 @@ sockalloc(struct file **f, uint32 raddr, uint16 lport, uint16 rport)
   while (pos) {
     if (pos->raddr == raddr &&
         pos->lport == lport &&
-	pos->rport == rport) {
+	      pos->rport == rport) {
       release(&lock);
       goto bad;
     }
@@ -127,7 +130,7 @@ sockread(struct sock *si, uint64 addr, int n)
   release(&si->lock);
 
   len = m->len;
-  // read again?
+  // read again?  目前只读取长度为n的数据，之后的会丢掉？ yes...
   if (len > n)
     len = n;
   if (copyout(pr->pagetable, addr, m->head, len) == -1) {
@@ -152,6 +155,8 @@ sockwrite(struct sock *si, uint64 addr, int n)
     mbuffree(m);
     return -1;
   }
+
+  // 只发送udp数据
   net_tx_udp(m, si->raddr, si->lport, si->rport);
   return n;
 }
@@ -181,6 +186,7 @@ sockrecvudp(struct mbuf *m, uint32 raddr, uint16 lport, uint16 rport)
 
 found:
   acquire(&si->lock);
+  // 放入队列中，等待recv
   mbufq_pushtail(&si->rxq, m);
   wakeup(&si->rxq);
   release(&si->lock);

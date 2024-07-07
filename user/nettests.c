@@ -20,7 +20,8 @@ ping(uint16 sport, uint16 dport, int attempts)
 
   // you can send a UDP packet to any Internet address
   // by using a different dst.
-  
+
+  // sport , dport 目前，在udp协议中，会填充到udp的发送报文中
   if((fd = connect(dst, sport, dport)) < 0){
     fprintf(2, "ping: connect() failed\n");
     exit(1);
@@ -56,6 +57,7 @@ encode_qname(char *qn, char *host)
   
   for(char *c = host; c < host+strlen(host)+1; c++) {
     if(*c == '.') {
+      // 先填充小段的长度，再填充小段的内容
       *qn++ = (char) (c-l);
       for(char *d = l; d < c; d++) {
         *qn++ = *d;
@@ -66,6 +68,7 @@ encode_qname(char *qn, char *host)
   *qn = '\0';
 }
 
+// 从先填充小段的长度，再填充小段的内容，还原为 xxx.xxx.xxx.xxx的格式
 // Decode a DNS name
 static void
 decode_qname(char *qn, int max)
@@ -92,7 +95,8 @@ static int
 dns_req(uint8 *obuf)
 {
   int len = 0;
-  
+
+  // dns + encode"pdos.csail.mit.edu." + dns_question
   struct dns *hdr = (struct dns *) obuf;
   hdr->id = htons(6828);
   hdr->rd = 1;
@@ -151,14 +155,17 @@ dns_rep(uint8 *ibuf, int cc)
   
   len = sizeof(struct dns);
 
+  // dns + request...(qdcount) dns_question...(qdcount)  +  answer_string + dns_data (ancount)
   for(int i =0; i < ntohs(hdr->qdcount); i++) {
     char *qn = (char *) (ibuf+len);
     qname = qn;
+    // qname 指向最终的结果, question，
     decode_qname(qn, cc - len);
     len += strlen(qn)+1;
     len += sizeof(struct dns_question);
   }
 
+  // 真正获取dns的结果
   for(int i = 0; i < ntohs(hdr->ancount); i++) {
     if(len >= cc){
       printf("invalid DNS reply\n");
@@ -235,6 +242,7 @@ dns()
   // 8.8.8.8: google's name server
   dst = (8 << 24) | (8 << 16) | (8 << 8) | (8 << 0);
 
+  // 目标服务： 8.8.8.8  端口：53
   if((fd = connect(dst, 10000, 53)) < 0){
     fprintf(2, "ping: connect() failed\n");
     exit(1);
@@ -260,7 +268,7 @@ int
 main(int argc, char *argv[])
 {
   int i, ret;
-  uint16 dport = NET_TESTS_PORT;
+  uint16 dport = NET_TESTS_PORT;  // 26099
 
   printf("nettests running on port %d\n", dport);
   
