@@ -104,6 +104,10 @@ ifeq ($(LAB),net)
 CFLAGS += -DNET_TESTS_PORT=$(SERVERPORT)
 endif
 
+ifeq ($(LAB),lock)
+CFLAGS += -DSMP_SIZE=$(CPUS)
+endif
+
 ifdef KCSAN
 CFLAGS += -DKCSAN
 KCSANFLAG = -fsanitize=thread -fno-inline

@@ -14,6 +14,7 @@ main(void)
   while (1) {
     n = statistics(buf, SZ);
     for (i = 0; i < n; i++) {
+      // 将buf的数据输出到 stdout上
       write(1, buf+i, 1);
     }
     if (n != SZ)

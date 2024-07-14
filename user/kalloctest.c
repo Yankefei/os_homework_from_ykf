@@ -24,6 +24,20 @@ main(int argc, char *argv[])
   exit(0);
 }
 
+/*
+--- lock kmem/bcache stats
+lock: kmem: #test-and-set 0 #acquire() 33064
+lock: bcache: #test-and-set 0 #acquire() 1156
+--- top 5 contended locks:
+lock: proc: #test-and-set 32489 #acquire() 236293
+lock: virtio_disk: #test-and-set 32089 #acquire() 99
+lock: proc: #test-and-set 8479 #acquire() 236080
+lock: proc: #test-and-set 6594 #acquire() 236076
+lock: proc: #test-and-set 3950 #acquire() 236114
+tot= 0
+*/
+
+// 获取tot的数值，只统计了 bcache 和  kmeme的  nts总和
 int ntas(int print)
 {
   int n;
@@ -32,7 +46,7 @@ int ntas(int print)
   if (statistics(buf, SZ) <= 0) {
     fprintf(2, "ntas: no stats\n");
   }
-  c = strchr(buf, '=');
+  c = strchr(buf, '=');  // 返回遇到的第一个 = 的位置地址
   n = atoi(c+2);
   if(print)
     printf("%s", buf);
@@ -71,6 +85,7 @@ void test1(void)
   }
   printf("test1 results:\n");
   n = ntas(1);
+  // 差值小于10
   if(n-m < 10) 
     printf("test1 OK\n");
   else

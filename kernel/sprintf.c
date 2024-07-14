@@ -44,6 +44,7 @@ sprintint(char *s, int xx, int base, int sign)
   return n;
 }
 
+// sz buf 长度
 int
 snprintf(char *buf, int sz, char *fmt, ...)
 {

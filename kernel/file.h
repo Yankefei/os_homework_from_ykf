@@ -45,4 +45,4 @@ struct devsw {
 extern struct devsw devsw[];
 
 #define CONSOLE 1
-#define STATS   2
+#define STATS   2  // ? 状态统计的设备

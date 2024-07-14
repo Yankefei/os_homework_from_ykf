@@ -159,9 +159,15 @@ pop_off(void)
 }
 
 // Read a shared 32-bit value without holding a lock
+/**
+atomic_read4 函数通过 __atomic_load 函数以原子的方式读取 addr 指向的 int 值，
+并返回读取到的值。这保证了读取操作的原子性和顺序一致性，从而避免多线程并发访问时的竞争条件。
+*/
 int
 atomic_read4(int *addr) {
   uint32 val;
+  //__ATOMIC_SEQ_CST 指定了内存序列一致性模型，表示这次加载操作具有顺序一致性（sequential consistency），
+  // 这是最严格的内存模型，确保所有线程以一致的顺序看到所有原子操作。
   __atomic_load(addr, &val, __ATOMIC_SEQ_CST);
   return val;
 }
@@ -178,6 +184,9 @@ snprint_lock(char *buf, int sz, struct spinlock *lk)
   return n;
 }
 
+/**
+
+*/
 int
 statslock(char *buf, int sz) {
   int n;
