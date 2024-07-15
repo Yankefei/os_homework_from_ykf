@@ -53,6 +53,17 @@ kinit()
   int total_mem_pkg = (int)(total_mem / PGSIZE);
   int remainder = total_mem_pkg % NCPU;
   int average_pkg = ((int)total_mem_pkg - remainder) / NCPU;
+
+// 32735, 3, 8183, 4
+// init, total_size: 8183, begin: 0x0000000080021000, end: 0x0000000082018000
+// init, total_size: 8183, begin: 0x0000000082018000, end: 0x000000008400f000
+// init, total_size: 8183, begin: 0x000000008400f000, end: 0x0000000086006000
+// init, total_size: 8186, begin: 0x0000000086006000, end: 0x0000000088000000
+
+// 32736, 0, 10912, 3
+// init, total_size: 10912, begin: 0x0000000080020000, end: 0x0000000082ac0000
+// init, total_size: 10912, begin: 0x0000000082ac0000, end: 0x0000000085560000
+// init, total_size: 10912, begin: 0x0000000085560000, end: 0x0000000088000000
   printf("%d, %d, %d, %d\n", total_mem_pkg, remainder, average_pkg, SMP_SIZE);
 
   // 填充除freelist之外的基本字段

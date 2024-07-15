@@ -138,10 +138,20 @@ void test2() {
 }
 
 // Test concurrent kalloc/kfree and stealing
+// 偶发, SMP 为4时, 推测，是由于进程2 调用countfree 在疯狂申请内存，而进程1没有获取到足够的内存，导致返回为-1，然后 -1 + 4 == 3
+// 和 stval中异常访问的内存地址相同
+/**
+start test3
+usertrap(): unexpected scause 0x000000000000000f pid=7
+            sepc=0x000000000000039e stval=0x0000000000000003
+child done 1
+test3 OK
+*/
 void test3(void)
 {
   void *a, *a1;
-  printf("start test3\n");  
+  printf("start test3\n");
+  // 两个进程
   for(int i = 0; i < NCHILD; i++){
     int pid = fork();
     if(pid < 0){
@@ -152,6 +162,8 @@ void test3(void)
       if (i == 0) {
         for(i = 0; i < N; i++) {
           a = sbrk(4096);
+          if ((uint64)a == -1)
+            printf("not have enough mem\n");
           *(int *)(a+4) = 1;
           a1 = sbrk(-4096);
           if (a1 != a + 4096) {
@@ -162,8 +174,9 @@ void test3(void)
         printf("child done %d\n", i);
         exit(0);
       } else {
-        countfree();
+        /*int n = */countfree();
         printf("child done %d\n", i);
+        // printf("child done %d, %d\n", i, n);
         exit(0);
       }
     }
