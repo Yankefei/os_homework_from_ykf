@@ -11,14 +11,16 @@
 //
 // A log transaction contains the updates of multiple FS system
 // calls. The logging system only commits when there are
-// no FS system calls active. Thus there is never
+// no FS system calls active. 
+// Thus there is never
 // any reasoning required about whether a commit might
 // write an uncommitted system call's updates to disk.
-//
+// 因此，无需推理提交是否会将未提交的系统调用的更新写入磁盘。
+
 // A system call should call begin_op()/end_op() to mark
 // its start and end. Usually begin_op() just increments
 // the count of in-progress FS system calls and returns.
-// But if it thinks the log is close to running out, it
+// But if it thinks the log is close to(接近) running out(用完), it
 // sleeps until the last outstanding end_op() commits.
 //
 // The log is a physical re-do log containing disk blocks.
@@ -28,13 +30,14 @@
 //   block B
 //   block C
 //   ...
-// Log appends are synchronous.
+// Log appends are synchronous.  // log 的追加是同步的
 
+// 头块的内容，用于磁盘上的头块以及在提交之前在内存中跟踪已记录的块号。
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
 struct logheader {
   int n;
-  int block[LOGSIZE];
+  int block[LOGSIZE];   // 30  磁盘中的log block 也是30
 };
 
 struct log {
@@ -43,8 +46,8 @@ struct log {
   int size;
   int outstanding; // how many FS sys calls are executing.
   int committing;  // in commit(), please wait.
-  int dev;
-  struct logheader lh;
+  int dev;         // 理论上，一种文件设备，比如磁盘，就要有一种对应的log
+  struct logheader lh;  // 大小不超过  BSIZE  1024， 因为logheader就放在一个buf的data里面，大小1024
 };
 struct log log;
 
@@ -58,7 +61,9 @@ initlog(int dev, struct superblock *sb)
     panic("initlog: too big logheader");
 
   initlock(&log.lock, "log");
+  // Block number of first log block
   log.start = sb->logstart;
+  // Number of log blocks
   log.size = sb->nlog;
   log.dev = dev;
   recover_from_log();
@@ -71,12 +76,13 @@ install_trans(int recovering)
   int tail;
 
   for (tail = 0; tail < log.lh.n; tail++) {
+    // log.start + tail +1  ?  为何要 +1 因为第一个位置放的是logheader
     struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
     bwrite(dbuf);  // write dst to disk
     if(recovering == 0)
-      bunpin(dbuf);
+      bunpin(dbuf); // ? 为何 因为在log_write 时增加过ref
     brelse(lbuf);
     brelse(dbuf);
   }
@@ -119,7 +125,7 @@ recover_from_log(void)
   read_head();
   install_trans(1); // if committed, copy from log to disk
   log.lh.n = 0;
-  write_head(); // clear the log
+  write_head(); // clear the log, 需要先将  log.lh.n 设置为0
 }
 
 // called at the start of each FS system call.
@@ -130,6 +136,9 @@ begin_op(void)
   while(1){
     if(log.committing){
       sleep(&log, &log.lock);
+
+      // #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log,  LOGSIZE:30
+      // 保证本次的操作，不会最终超过LOGSIZE的大小，所以是在当前所有次数  log.outstanding 的基础上，增加1，来进行计算
     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
       // this op might exhaust log space; wait for commit.
       sleep(&log, &log.lock);
@@ -190,13 +199,24 @@ write_log(void)
   }
 }
 
+/**
+ * 先缓存
+ * 1. 先将缓存buf中的数据，转移到 log的磁盘位置，并写入磁盘
+ * 2. 更新log磁盘位置的 logheader结构体，并写入磁盘
+ * 真正写入
+ * 3. 按照logheader的数据，真正写入实际的data blocks区域的磁盘
+ *    这里为何要将目标 data buf refcnt 进行递减操作？ 是因为一开始在 log_write 过程中，已经将ref递增过一次，所以这里进行递减
+ * 4. 将log.lh.n的数据清零
+ * 5. 更新log磁盘位置的 logheader结构体，并写入磁盘
+*/
+
 static void
 commit()
 {
   if (log.lh.n > 0) {
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
-    install_trans(0); // Now install writes to home locations
+    install_trans(0); // Now install writes to home locations, from log to cache
     log.lh.n = 0;
     write_head();    // Erase the transaction from the log
   }
@@ -228,7 +248,7 @@ log_write(struct buf *b)
   }
   log.lh.block[i] = b->blockno;
   if (i == log.lh.n) {  // Add new block to log?
-    bpin(b);
+    bpin(b);  // 第一次记录到  log 中，需要增加buf的ref, 避免之后执行brelse后，缓存失效
     log.lh.n++;
   }
   release(&log.lock);

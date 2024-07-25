@@ -152,6 +152,9 @@ filewrite(struct file *f, uint64 addr, int n)
     // and 2 blocks of slop for non-aligned writes.
     // this really belongs lower down, since writei()
     // might be writing a device like the console.
+
+    // MAXOPBLOCKS 的作用？  10
+    // 可能是一个经验判断的预估值，尤其是最后的 /2操作，应该是按照经验判断的
     int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
     while(i < n){

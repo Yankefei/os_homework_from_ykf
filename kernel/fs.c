@@ -509,7 +509,7 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 
   if(off > ip->size || off + n < off)
     return -1;
-  if(off + n > MAXFILE*BSIZE)
+  if(off + n > MAXFILE*BSIZE)  // (12 + 256  个块) 1024
     return -1;
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){

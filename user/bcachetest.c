@@ -83,6 +83,23 @@ int ntas(int print)
 }
 
 // Test reading small files concurrently
+/**
+
+There are some circumstances(情景) in which it's OK if your solution has lock conflicts:
+
+1. When two processes concurrently use the same block number. bcachetest test0 doesn't ever do this.
+
+2. When two processes concurrently miss in the cache, and need to find an unused block to replace.
+bcachetest test0 doesn't ever do this.
+
+3. When two processes concurrently use blocks that conflict in whatever scheme(计划) you use to partition(分割) the
+blocks and locks; for example, if two processes use blocks whose block numbers hash to the same slot
+in a hash table. bcachetest test0 might do this, depending on your design, but you should try to
+adjust your scheme's details to avoid conflicts (e.g., change the size of your hash table).
+
+*/
+
+// 多进程分别访问不同的文件
 void
 test0()
 {
@@ -138,11 +155,17 @@ test0()
   n = ntas(1);
   if (n-m < 500)
     printf("test0: OK\n");
-  else
-    printf("test0: FAIL\n");
+  else {
+    // printf("test0: FAIL\n");
+    printf("test0: FAIL, n %d, m %d\n", n, m);
+  }
 }
 
 // Test bcache evictions by reading a large file concurrently
+/*
+ bcachetest 's test1 uses more distinct(不同的) blocks than there are buffers,
+ and exercises lots of file system code paths.
+*/
 void test1()
 {
   char file[3];
@@ -170,12 +193,14 @@ void test1()
     if(pid == 0){
       if (i==0) {
         for (i = 0; i < N; i++) {
+          // 读 200 遍？反复读
           readfile(file, BIG*BSIZE, BSIZE);
         }
         unlink(file);
         exit(0);
       } else {
         for (i = 0; i < N*20; i++) {
+          // 如何理解？ 反复读 4000 遍
           readfile(file, 1, BSIZE);
         }
         unlink(file);

@@ -16,7 +16,10 @@ main(void)
 {
   int pid, wpid;
 
+  int need_mknod = 0;
   if(open("console", O_RDWR) < 0){
+    need_mknod = 1;
+
     mknod("console", CONSOLE, 0);
     mknod("statistics", STATS, 0);   // 创建一个统计的设备
     open("console", O_RDWR);
@@ -26,6 +29,9 @@ main(void)
 
   for(;;){
     printf("init: starting sh\n");
+    if (need_mknod) {
+      printf("first open console failed, ready to mknod it\n");
+    }
     pid = fork();
     if(pid < 0){
       printf("init: fork failed\n");

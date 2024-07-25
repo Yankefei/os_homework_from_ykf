@@ -52,6 +52,7 @@ initlock(struct spinlock *lk, char *name)
 #ifdef LAB_LOCK
   lk->nts = 0;
   lk->n = 0;
+  lk->debug = 0;
   findslot(lk);
 #endif  
 }
@@ -76,6 +77,11 @@ acquire(struct spinlock *lk)
   while(__sync_lock_test_and_set(&lk->locked, 1) != 0) {
 #ifdef LAB_LOCK
     __sync_fetch_and_add(&(lk->nts), 1);
+    // 这里是帮我调试出cache 里面死锁的关键堆栈代码 2024-07-25  yankefei
+    // if (lk->nts > 100000 && lk->debug == 0 && lk->name[0] == 'b') {
+    //   backtrace();
+    //   lk->debug = 1;
+    // }
 #else
    ;
 #endif

@@ -8,6 +8,7 @@ struct spinlock {
 #ifdef LAB_LOCK
   int nts;   // #test-and-set
   int n;     // acquire
+  int debug;  // debug for deadlock
 #endif
 };
 
