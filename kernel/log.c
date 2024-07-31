@@ -174,6 +174,7 @@ end_op(void)
   }
 }
 
+// 目前看这个函数，只会被commit调用
 // Copy modified blocks from cache to log.
 static void
 write_log(void)
@@ -190,6 +191,16 @@ write_log(void)
   }
 }
 
+/**
+ * 先缓存
+ * 1. 先将缓存buf中的数据，转移到 log的磁盘位置，并写入磁盘
+ * 2. 更新log磁盘位置的 logheader结构体，并写入磁盘
+ * 真正写入
+ * 3. 按照logheader的数据，真正写入实际的data blocks区域的磁盘
+ *    这里为何要将目标 data buf refcnt 进行递减操作？ 是因为一开始在 log_write 过程中，已经将ref递增过一次，所以这里进行递减
+ * 4. 将log.lh.n的数据清零
+ * 5. 更新log磁盘位置的 logheader结构体，并写入磁盘
+*/
 static void
 commit()
 {

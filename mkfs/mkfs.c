@@ -249,6 +249,9 @@ balloc(int used)
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+/**
+ * 完成了一件什么事情？ 将文件的 data block分布，填充到 dinode的树状结构中
+*/
 void
 iappend(uint inum, void *xp, int n)
 {
@@ -270,16 +273,47 @@ iappend(uint inum, void *xp, int n)
         din.addrs[fbn] = xint(freeblock++);
       }
       x = xint(din.addrs[fbn]);
-    } else {
+    } else if (fbn < NDIRECT + NINDIRECT) {
+      // 现申请一个空的INDIRECT块
       if(xint(din.addrs[NDIRECT]) == 0){
         din.addrs[NDIRECT] = xint(freeblock++);
       }
+      // 将上面选的 data blocks 的索引内容，拷贝到 indirect 里面
+      // 然后每一次循环，都将里面的一个元素赋值为 blocks的索引号
+      // 然后写回到 din.addrs[NDIRECT] 对应的磁盘块中
       rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
       if(indirect[fbn - NDIRECT] == 0){
         indirect[fbn - NDIRECT] = xint(freeblock++);
+        // 写回data block区域的数据
         wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
       }
+      // 获取到这个地方对应的 data blocks的索引
       x = xint(indirect[fbn-NDIRECT]);
+    } else {
+      // fbn < NDIRECT + NINDIRECT + DOUBLY_INDIRECT
+
+      // 现申请一个空的DOUBLY_INDIRECT块
+      if(xint(din.addrs[NDIRECT + 1]) == 0){
+        din.addrs[NDIRECT + 1] = xint(freeblock++);
+      }
+      rsect(xint(din.addrs[NDIRECT + 1]), (char*)indirect);
+      // indirect 为第一次索引
+      uint first_index = (fbn - NDIRECT - NINDIRECT) / NINDIRECT;
+      if (indirect[first_index] == 0) {
+        indirect[first_index] = xint(freeblock++);
+        // 更新第一层索引
+        wsect(xint(din.addrs[NDIRECT + 1]), (char*)indirect);
+      }
+
+      uint first_block_id = indirect[first_index];
+      // 读取第二层的信息
+      rsect(xint(first_block_id), (char*)indirect);
+      uint second_index = (fbn - NDIRECT - NINDIRECT) % NINDIRECT;
+      if (indirect[second_index] == 0) {
+        indirect[second_index] = xint(freeblock++);
+        // 更新第二层索引
+        wsect(xint(first_block_id), (char*)indirect);
+      }
     }
     n1 = min(n, (fbn + 1) * BSIZE - off);
     rsect(x, buf);
@@ -290,6 +324,7 @@ iappend(uint inum, void *xp, int n)
     p += n1;
   }
   din.size = xint(off);
+  // 这里会写回din信息, 所以上面主需要关注dinode之外挂载的 block数据
   winode(inum, &din);
 }
 

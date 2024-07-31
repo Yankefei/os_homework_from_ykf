@@ -124,51 +124,51 @@ bfree(int dev, uint b)
 // An inode and its in-memory representation go through a
 // sequence of states before they can be used by the
 // rest of the file system code.
-//
+
 // * Allocation: an inode is allocated if its type (on disk)
 //   is non-zero. ialloc() allocates, and iput() frees if
 //   the reference and link counts have fallen to zero.
-//
+
 // * Referencing in table: an entry in the inode table
 //   is free if ip->ref is zero. Otherwise ip->ref tracks
 //   the number of in-memory pointers to the entry (open
 //   files and current directories). iget() finds or
 //   creates a table entry and increments its ref; iput()
 //   decrements ref.
-//
+
 // * Valid: the information (type, size, &c) in an inode
 //   table entry is only correct when ip->valid is 1.
 //   ilock() reads the inode from
 //   the disk and sets ip->valid, while iput() clears
 //   ip->valid if ip->ref has fallen to zero.
-//
+
 // * Locked: file system code may only examine and modify
 //   the information in an inode and its content if it
 //   has first locked the inode.
-//
+
 // Thus a typical sequence is:
 //   ip = iget(dev, inum)
 //   ilock(ip)
 //   ... examine and modify ip->xxx ...
 //   iunlock(ip)
 //   iput(ip)
-//
+
 // ilock() is separate from iget() so that system calls can
 // get a long-term reference to an inode (as for an open file)
 // and only lock it for short periods (e.g., in read()).
 // The separation also helps avoid deadlock and races during
 // pathname lookup. iget() increments ip->ref so that the inode
 // stays in the table and pointers to it remain valid.
-//
+
 // Many internal file system functions expect the caller to
 // have locked the inodes involved; this lets callers create
 // multi-step atomic operations.
-//
+
 // The itable.lock spin-lock protects the allocation of itable
 // entries. Since ip->ref indicates whether an entry is free,
 // and ip->dev and ip->inum indicate which i-node an entry
 // holds, one must hold itable.lock while using any of those fields.
-//
+
 // An ip->lock sleep-lock protects all ip-> fields other than ref,
 // dev, and inum.  One must hold ip->lock in order to
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
@@ -382,8 +382,8 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
-  struct buf *bp;
+  uint addr, *a, *second_array;
+  struct buf *bp, *bp_second;
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0){
@@ -416,6 +416,40 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if (bn < DOUBLY_INDIRECT) {
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0) {
+      addr = balloc(ip->dev);
+      if(addr == 0)
+        return 0;
+      ip->addrs[NDIRECT + 1] = addr;
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    uint first_index = bn / NINDIRECT;
+    uint second_index = bn % NINDIRECT;
+    if ((addr = a[first_index]) == 0) {
+      addr = balloc(ip->dev);
+      if(addr == 0)
+        return 0;
+      a[first_index] = addr;
+      log_write(bp);
+    }
+    bp_second = bread(ip->dev, addr);
+    second_array = (uint*)bp_second->data;
+    if ((addr = second_array[second_index]) == 0) {
+      addr = balloc(ip->dev);
+      if(addr == 0)
+        return 0;
+      second_array[second_index] = addr;
+      log_write(bp_second);
+    }
+
+    brelse(bp_second);  // 释放pb_second
+    brelse(bp);  // 释放bp
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -426,8 +460,8 @@ void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bp_second;
+  uint *a, *second_array;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -446,6 +480,28 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if (ip->addrs[NDIRECT + 1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+    for (i = 0; i < NDIRECT; i++) {
+      if (a[i]) {
+        // clean second_index
+        bp_second = bread(ip->dev, a[i]);
+        second_array = (uint*)bp_second->data;
+        for (j = 0; j < NDIRECT; j++) {
+          if (second_array[j]) {
+            bfree(ip->dev, second_array[j]);
+          }
+        }
+        brelse(bp_second);
+        bfree(ip->dev, a[i]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
   }
 
   ip->size = 0;
