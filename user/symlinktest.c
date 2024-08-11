@@ -16,6 +16,57 @@ static void testsymlink(void);
 static void concur(void);
 static void cleanup(void);
 
+/**
+
+Hints:
+1. First, create a new system call number for symlink, add an entry to user/usys.pl, user/user.h, 
+   and implement an empty sys_symlink in kernel/sysfile.c.
+
+2. Add a new file type ( T_SYMLINK ) to kernel/stat.h to represent a symbolic link.
+
+3. Add a new flag to kernel/fcntl.h, ( O_NOFOLLOW ), that can be used with the open system call. 
+   Note that flags passed to open are combined using a bitwise OR operator, so your new flag should
+   not overlap with any existing flags. This will let you compile user/symlinktest.c once you add it to the Makefile.
+
+4. Implement the symlink(target, path) system call to create a new symbolic link at path that refers to target. 
+   Note that target does not need to exist for the system call to succeed. 
+   [实现 symlink(target, path) 系统调用，在 path 处创建一个指向 target 的新符号链接。
+   请注意，目标不需要存在，系统调用也能成功。]
+   You will need to choose somewhere to store the target path of a symbolic link, for example, in the inode's data blocks.
+   [放在 inode的data block中]
+   symlink should return an integer representing success (0) or failure (-1) similar to link and unlink .
+
+   ln -s 命令可以创建一个指向不存在文件或目录的软链接。具体来说，软链接的目标文件或目录不需要在创建软链接时存在。
+   这是因为软链接只是包含路径信息的特殊文件，而不检查目标路径是否有效
+   因为软链接可以提前设置好，以便稍后创建对应的文件或目录
+
+5. Modify the open system call to handle the case where the path refers to a symbolic link. If the file does not exist,
+   open must fail. When a process specifies O_NOFOLLOW in the flags to open , open should open the symlink
+   (and not follow the symbolic link).
+
+6. If the linked file is also a symbolic link, you must recursively follow it until a non-link file is reached. 
+   If the links form a cycle, you must return an error code. You may approximate this by returning an error code
+   if the depth of links reaches some threshold (e.g., 10).
+
+7. Other system calls (e.g., link and unlink) must not follow symbolic links; these system calls operate on the
+   symbolic link itself.
+
+8. You do not have to handle symbolic links to directories for this lab.
+   [您不必处理此实验的目录的符号链接]
+
+//////////////////
+
+做法：1. 符号链接的目录信息还是需要进行处理
+     2. 具体的链接位置，放在对应文件的 inode data block 中
+     3. 处理循环链接的情况
+
+     4. 需要支持创建和删除的过程
+     5. 软链接的名称不能和对应目录或文件的名称一样
+     6. 对同一个文件，不能连续创建2个名称一样的软链接
+     7. 如果目标文件不存在，那么将创建一个空的inode节点
+
+*/
+
 int
 main(int argc, char *argv[])
 {
@@ -67,7 +118,7 @@ testsymlink(void)
   fd1 = open("/testsymlink/a", O_CREATE | O_RDWR);
   if(fd1 < 0) fail("failed to open a");
 
-  r = symlink("/testsymlink/a", "/testsymlink/b");
+  r = symlink("/testsymlink/a", "/testsymlink/b");   // b ->  a
   if(r < 0)
     fail("symlink b -> a failed");
 
@@ -86,27 +137,27 @@ testsymlink(void)
   if (c != 'a')
     fail("failed to read bytes from b");
 
-  unlink("/testsymlink/a");
+  unlink("/testsymlink/a");                    // b -> (a)
   if(open("/testsymlink/b", O_RDWR) >= 0)
     fail("Should not be able to open b after deleting a");
 
-  r = symlink("/testsymlink/b", "/testsymlink/a");
+  r = symlink("/testsymlink/b", "/testsymlink/a");    //  a  ->  b -> (a)
   if(r < 0)
     fail("symlink a -> b failed");
 
-  r = open("/testsymlink/b", O_RDWR);
+  r = open("/testsymlink/b", O_RDWR);   // 需要打开循环
   if(r >= 0)
     fail("Should not be able to open b (cycle b->a->b->..)\n");
   
-  r = symlink("/testsymlink/nonexistent", "/testsymlink/c");
+  r = symlink("/testsymlink/nonexistent", "/testsymlink/c");  // c -> (nonexistent)
   if(r != 0)
     fail("Symlinking to nonexistent file should succeed\n");
 
-  r = symlink("/testsymlink/2", "/testsymlink/1");
+  r = symlink("/testsymlink/2", "/testsymlink/1");   //  1 -> (2)
   if(r) fail("Failed to link 1->2");
-  r = symlink("/testsymlink/3", "/testsymlink/2");
+  r = symlink("/testsymlink/3", "/testsymlink/2");   //  2 -> (3)
   if(r) fail("Failed to link 2->3");
-  r = symlink("/testsymlink/4", "/testsymlink/3");
+  r = symlink("/testsymlink/4", "/testsymlink/3");   //  3 -> (4)
   if(r) fail("Failed to link 3->4");
 
   close(fd1);
@@ -131,6 +182,8 @@ done:
   close(fd2);
 }
 
+#if 1
+// 个人理解，只要保证多线程过程中，每个单独的函数执行完整即可，即使失败，能正常退出和清理，也ok
 static void
 concur(void)
 {
@@ -159,8 +212,10 @@ concur(void)
       unsigned int x = (pid ? 1 : 97);
       for(i = 0; i < 100; i++){
         x = x * 1103515245 + 12345;
+        // 创建软连接 或者释放软连接
         if((x % 3) == 0) {
-          symlink("/testsymlink/z", "/testsymlink/y");
+          symlink("/testsymlink/z", "/testsymlink/y");  // y -> z
+          // 可以返回 -1， 只要过程中能正常即可
           if (stat_slink("/testsymlink/y", &st) == 0) {
             m++;
             if(st.type != T_SYMLINK) {
@@ -169,6 +224,7 @@ concur(void)
             }
           }
         } else {
+          // 直接释放，无论是否重复释放
           unlink("/testsymlink/y");
         }
       }
@@ -186,3 +242,5 @@ concur(void)
   }
   printf("test concurrent symlinks: ok\n");
 }
+
+#endif

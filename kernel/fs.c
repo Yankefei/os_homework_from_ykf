@@ -333,6 +333,8 @@ iunlock(struct inode *ip)
 // to it, free the inode (and its content) on disk.
 // All calls to iput() must be inside a transaction in
 // case it has to free the inode.
+
+// 这个函数是否不能随便调用，否则可能会导致ref为0
 void
 iput(struct inode *ip)
 {
@@ -465,7 +467,10 @@ itrunc(struct inode *ip)
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
+      // 需要单独处理下 T_SYMLINK 的类型
+      if (!(ip->type == T_SYMLINK && i != 0)) {
+        bfree(ip->dev, ip->addrs[i]);
+      }
       ip->addrs[i] = 0;
     }
   }
@@ -642,6 +647,7 @@ dirlink(struct inode *dp, char *name, uint inum)
   // Check that name is not present.
   if((ip = dirlookup(dp, name, 0)) != 0){
     iput(ip);
+    // printf("dirlink failed...dirlookup is not empty\n");
     return -1;
   }
 
