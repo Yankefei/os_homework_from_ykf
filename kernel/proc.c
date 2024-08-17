@@ -140,6 +140,10 @@ found:
     return 0;
   }
 
+  for (int i = 0; i < NVMAREA; i++) {
+    p->vm_list[i] = 0;
+  }
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -257,20 +261,23 @@ userinit(void)
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
-growproc(int n)
+growproc(int n, int mem_flag)
 {
   uint64 sz;
   struct proc *p = myproc();
 
+  acquire(&p->lock);
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+    if((sz = uvmallocperm(p->pagetable, sz, sz + n, mem_flag)) == 0) {
+      release(&p->lock);
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+  release(&p->lock);
   return 0;
 }
 
@@ -288,13 +295,16 @@ fork(void)
     return -1;
   }
 
+  acquire(&p->lock);
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
+    release(&p->lock);
     release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
+  release(&p->lock);
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);

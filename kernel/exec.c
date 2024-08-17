@@ -73,7 +73,9 @@ exec(char *path, char **argv)
   ip = 0;
 
   p = myproc();
+  acquire(&p->lock);
   uint64 oldsz = p->sz;
+  release(&p->lock);
 
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible as a stack guard.
@@ -123,7 +125,9 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+  acquire(&p->lock);
   p->sz = sz;
+  release(&p->lock);
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);

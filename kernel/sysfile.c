@@ -229,6 +229,7 @@ sys_unlink(void)
   iunlockput(dp);
 
   ip->nlink--;
+  // printf("nlink: %d\n", ip->nlink);
   iupdate(ip);
   iunlockput(ip);
 

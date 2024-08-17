@@ -33,6 +33,10 @@ kinit()
 void
 freerange(void *pa_start, void *pa_end)
 {
+  // start: 0x0000000080022870, end: 0x0000000088000000, total: 0x0000000007fdd790
+  // 134,076,304 byte
+  printf("kalloc range: start: %p, end: %p, total: %p\n",
+    (uint64)pa_start, (uint64)pa_end, (uint64)pa_end - (uint64)pa_start);
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)

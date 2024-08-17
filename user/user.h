@@ -35,6 +35,11 @@ int pgaccess(void *base, int len, void *mask);
 int ugetpid(void);
 #endif
 
+#ifdef LAB_MMAP
+void* mmap(void*, size_t, int, int, int, off_t);
+int munmap(void*, size_t);
+#endif
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);

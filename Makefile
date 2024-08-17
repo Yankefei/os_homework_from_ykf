@@ -14,6 +14,7 @@ OBJS = \
   $K/string.o \
   $K/main.o \
   $K/vm.o \
+	$K/vm_area.o \
   $K/proc.o \
   $K/swtch.o \
   $K/trampoline.o \
@@ -88,6 +89,7 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
 
+# 这里定义了 LAB_MMAP 的宏
 ifdef LAB
 LABUPPER = $(shell echo $(LAB) | tr a-z A-Z)
 XCFLAGS += -DSOL_$(LABUPPER) -DLAB_$(LABUPPER)
@@ -189,7 +191,10 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 
-
+ifeq ($(LAB), mmap)
+UPROGS += \
+	$U/_mmaptest
+endif
 
 
 ifeq ($(LAB),lock)

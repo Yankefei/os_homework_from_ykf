@@ -8,9 +8,70 @@
 
 void mmap_test();
 void fork_test();
-char buf[BSIZE];
+char buf[BSIZE];  // 1024
 
 #define MAP_FAILED ((char *) -1)
+
+/**
+
+1. Fill in the page table lazily, in response to page faults. That is, mmap should not allocate physical
+memory or read the file. Instead, do that in page fault handling code in (or called by) usertrap , as in
+the copy-on-write lab. The reason to be lazy is to ensure that mmap of a large file is fast, and that mmap
+of a file larger than physical memory is possible.
+
+延时申请，好处：1. 加速调用  2. mmap 一个大于物理内存的文件是可能的
+
+2. Keep track of what mmap has mapped for each process. Define a structure corresponding to the VMA
+(virtual memory area) described in the "virtual memory for applications" lecture. This should record
+the address, length, permissions, file, etc. for a virtual memory range created by mmap . Since the xv6
+kernel doesn't have a memory allocator in the kernel, it's OK to declare a fixed-size array of VMAs
+and allocate from that array as needed. A size of 16 should be sufficient（足够的）.
+
+
+3. Implement mmap : find an unused region in the process's address space in which to map the file, and add
+a VMA to the process's table of mapped regions. The VMA should contain a pointer to a struct file
+for the file being mapped; mmap should increase the file's reference count so that the structure doesn't
+disappear when the file is closed (hint: see filedup ). Run mmaptest : the first mmap should succeed, but
+the first access to the mmap-ed memory will cause a page fault and kill mmaptest .
+
+file's reference count ++
+
+4. Add code to cause a page-fault in a mmap-ed region to allocate a page of physical memory, read 4096
+bytes of the relevant file into that page, and map it into the user address space. Read the file with
+readi , which takes an offset argument at which to read in the file (but you will have to lock/unlock the
+inode passed to readi ). Don't forget to set the permissions correctly on the page. Run mmaptest ; it
+should get to the first munmap .
+
+file data  ->  readi -> copy into memory page
+
+5. Implement munmap : find the VMA for the address range and unmap the specified pages (hint: use
+uvmunmap ). If munmap removes all pages of a previous mmap , it should decrement the reference count of
+the corresponding struct file . If an unmapped page has been modified and the file is mapped
+MAP_SHARED , write the page back to the file. Look at filewrite for inspiration(灵感).
+
+munmap ->  write ->  file
+file's reference count --
+
+6. Ideally your implementation would only write back MAP_SHARED pages that the program actually
+modified. The dirty bit ( D ) in the RISC-V PTE indicates whether a page has been written. However,
+mmaptest does not check that non-dirty pages are not written back; thus you can get away with writing
+pages back without looking at D bits.[但是，mmaptest不会检查非脏页是否被写回；因此，您可以在不查看D位的情况下写回页面。]
+
+
+7. Modify exit to unmap the process's mapped regions as if munmap had been called. Run mmaptest ;
+mmap_test should pass, but probably not fork_test .
+
+
+8. Modify fork to ensure that the child has the same mapped regions as the parent. Don't forget to
+increment the reference count for a VMA's struct file . In the page fault handler of the child, it is
+OK to allocate a new physical page instead of sharing a page with the parent. The latter would be
+cooler, but it would require more implementation work. Run mmaptest ; it should pass both mmap_test
+and fork_test .
+
+implement the allocate new physical page in child.
+
+*/
+
 
 int
 main(int argc, char *argv[])
@@ -215,6 +276,9 @@ mmap_test(void)
     err("mmap (5)");
   if (close(fd1) == -1)
     err("close (5)");
+  // 是的，可以直接删除，在 PROT_READ的时候
+  // 即使为 PROT_WRITE 下，也可以直接删除，mmap的过程不会受影响，只不过 MAP_SHARED下，munmap不会将数据写会文件
+  // 但munmap也不会报错
   if (unlink("mmap1") == -1)
     err("unlink (1)");
 
@@ -228,7 +292,7 @@ mmap_test(void)
     err("mmap (6)");
   if (close(fd2) == -1)
     err("close (6)");
-  if (unlink("mmap2") == -1)
+  if (unlink("mmap2") == -1)  // 直接删除
     err("unlink (2)");
 
   if(memcmp(p1, "12345", 5) != 0)
@@ -302,3 +366,30 @@ fork_test(void)
 
   printf("fork_test OK\n");
 }
+
+
+/*
+Optional challenges
+
+// choose 1 and 5 to fix
+
+1. If two processes have the same file mmap-ed (as in fork_test ), share their physical pages. You will
+need reference counts on physical pages.
+
+2. Your solution probably allocates a new physical page for each page read from the mmap-ed file, even
+though the data is also in kernel memory in the buffer cache. Modify your implementation to use that
+physical memory, instead of allocating a new page. This requires that file blocks be the same size as
+pages (set BSIZE to 4096). You will need to pin mmap-ed blocks into the buffer cache. You will need
+worry about reference counts.
+
+3. Remove redundancy between your implementation for lazy allocation and your implementation of
+mmap-ed files. (Hint: create a VMA for the lazy allocation area.)
+
+4. Modify exec to use a VMA for different sections of the binary so that you get on-demand-paged
+executables. This will make starting programs faster, because exec will not have to read any data from
+the file system.
+
+5. Implement page-out and page-in: have the kernel move some parts of processes to disk when physical
+memory is low.[当物理内存不足时，让内核将进程的某些部分移动到磁盘] Then, page in the paged-out memory when the
+process references it.
+*/
