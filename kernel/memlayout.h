@@ -46,7 +46,7 @@
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
-#define TRAMPOLINE (MAXVA - PGSIZE)
+#define TRAMPOLINE (MAXVA - PGSIZE)  // 0x0000004000000000   - 0x1000  = 0x3FFFFFF000
 
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
@@ -61,4 +61,9 @@
 //   ...
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
-#define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define TRAPFRAME (TRAMPOLINE - PGSIZE)  // 0x3FFFFFE000 - 0x40000000
+
+#define KBSIZE 0x400  // 1024
+
+// 开辟 1G的共享内存映射区域
+#define MMAPBASE (TRAPFRAME - KBSIZE * KBSIZE * KBSIZE)  // 0x3FFFFFE000 - 0x40000000 = 0x3FBFFFE000

@@ -271,13 +271,20 @@ mmap_test(void)
     err("open (5)");
   if(write(fd1, "12345", 5) != 5)
     err("write (1)");
+
+  //////////////////
+  // 实现逻辑：
+  // mmap 里面调用了 filedup， 所以下面close的时候，不会递减 ip->ref
+  // unlink 之后，也只会将nlink设置为0
+  // 等最后 munmap 的时候，再一次调用 fileclose， 才会彻底将文件清理掉
+  //////////////////
   char *p1 = mmap(0, PGSIZE, PROT_READ, MAP_PRIVATE, fd1, 0);
   if(p1 == MAP_FAILED)
     err("mmap (5)");
   if (close(fd1) == -1)
     err("close (5)");
   // 是的，可以直接删除，在 PROT_READ的时候
-  // 即使为 PROT_WRITE 下，也可以直接删除，mmap的过程不会受影响，只不过 MAP_SHARED下，munmap不会将数据写会文件
+  // 即使为 PROT_WRITE 下，也可以直接删除，mmap的过程不会受影响，只不过 MAP_SHARED下，munmap不会将数据写会回文件
   // 但munmap也不会报错
   if (unlink("mmap1") == -1)
     err("unlink (1)");
@@ -330,7 +337,7 @@ fork_test(void)
   makefile(f);
   if ((fd = open(f, O_RDONLY)) == -1)
     err("open (7)");
-  if (unlink(f) == -1)
+  if (unlink(f) == -1)  // unlink ?
     err("unlink (3)");
   char *p1 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0);
   if (p1 == MAP_FAILED)
@@ -346,6 +353,7 @@ fork_test(void)
   if((pid = fork()) < 0)
     err("fork");
   if (pid == 0) {
+    // checkout 2 pages
     _v1(p1);
     if (munmap(p1, PGSIZE) == -1) // just the first page
       err("munmap (7)");
