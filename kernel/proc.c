@@ -329,17 +329,33 @@ fork(void)
   np->sz = p->sz;
   np->mmap_base = p->mmap_base;
 
-  for (v = 0; v < NVMAREA; v++) {
-    if (p->vm_list[v] != 0) {
-      np->vm_list[v] = p->vm_list[v];
-      vmareadup(np->vm_list[v]);
-    }
-  }
-
   // 需要将 mmap区域的虚拟内存区域，映射到已经申请好的物理内存上
   // 1. 依次遍历vm_list, 获取当时page映射的 perm, perm 需要逐页遍历获取
   // 2. 依次调用 mappages 完成映射
-  
+  for (v = 0; v < NVMAREA; v++) {
+    if (p->vm_list[v] != 0) {
+      np->vm_list[v] =  vmarecopy(p->vm_list[v]);
+
+      uint64 a, beginsz, endsz;
+      pte_t *pte;
+      beginsz = PGROUNDUP(np->vm_list[v]->vm_base->addr_base);
+      endsz = np->vm_list[v]->vm_base->addr_base + np->vm_list[v]->vm_base->len_base;
+      for (a = beginsz; a < endsz; a += PGSIZE) {
+        if((pte = walk(p->pagetable, a, 0)) == 0) {
+          panic("walk process addr");
+        }
+        int page_flags = PTE_FLAGS(*pte);
+        // if ((nppte = walk(np->pagetable, a, 1)) == 0) {
+        //   panic("walk np process addr");
+        // }
+        // *pte = *pte | page_flags;
+
+        if(mappages(np->pagetable, a, PGSIZE, (uint64)PTE2PA(*pte), page_flags) != 0){
+          panic("mappages np process addr");
+        }
+      }
+    }
+  }
 
   release(&p->lock);
 
@@ -411,8 +427,15 @@ exit(int status)
   for (int i = 0; i < NVMAREA; i++) {
     struct vmarea* vm = p->vm_list[i];
     if (vm != 0) {
-      uvmmmapdealloc(p->pagetable, vm->addr_base + vm->len_base, vm->addr_base);
-      fileclose(vm->file);
+      if (vm->vm_base->ref == 1) {
+        uvmmmapdealloc(p->pagetable, vm->vm_base->addr_base + vm->vm_base->len_base, vm->vm_base->addr_base);
+        fileclose(vm->vm_base->file);
+      } else {
+        // 清理掉 共享内存的映射结构, mappages 的逆过程
+        int npages =
+          (PGROUNDUP(vm->vm_base->addr_base + vm->vm_base->len_base) - PGROUNDUP(vm->vm_base->addr_base)) / PGSIZE;
+        uvmunmap(p->pagetable, PGROUNDUP(vm->vm_base->addr_base), npages, 0);
+      }
       vmarearelease(vm);
       p->vm_list[i] = 0;
     }

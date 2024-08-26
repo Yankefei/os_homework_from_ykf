@@ -206,7 +206,8 @@ void            virtio_disk_intr(void);
 
 // vm_area.c
 void            vmareainit(void);
-struct vmarea*  vmareaalloc(uint64 addr, size_t len, int flags, off_t offset);
+struct vmarea*  vmareaalloc(uint64 addr, size_t len, int flags, int port, off_t offset);
+struct vmarea*  vmarecopy(struct vmarea*);
 void            vmarearelease(struct vmarea*);
 int             vmareacheckscope(struct vmarea *, uint64, size_t);
 struct vmarea*  vmareadup(struct vmarea *vm);

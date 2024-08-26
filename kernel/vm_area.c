@@ -14,33 +14,76 @@
 struct {
   struct spinlock lock;
   struct vmarea vm_list[MAXVMAREA];
+
+  struct vmareabase vm_base_list[MAXVMAREA];
 } vm_area;
 
 
 void vmareainit(void)
 {
   initlock(&vm_area.lock, "vm_area");
-  // 应该用上面的 lock 足够
-  // for (int i = 0; i < MAXVMAREA; i++) {
-  //   initlock(&vm_area.vm_list[i].lock, "vm_list_area");
-  // }
+
+  for (int i = 0; i < MAXVMAREA; i++) {
+    vm_area.vm_list[i].usable = 0;
+    vm_area.vm_base_list[i].ref = 0;
+  }
 }
 
 // 设置初始状态
 struct vmarea*
-vmareaalloc(uint64 addr, size_t len, int flags, off_t offset)
+vmareaalloc(uint64 addr, size_t len, int flags, int prot, off_t offset)
+{
+  struct vmarea* vm;
+  struct vmareabase* vm_base;
+  int ret = 0;
+
+  acquire(&vm_area.lock);
+
+  for (vm_base = vm_area.vm_base_list; vm_base < vm_area.vm_base_list + MAXVMAREA; vm_base ++) {
+    if (vm_base->ref == 0) {
+      vm_base->ref = 1;
+      ret = 1;
+      break;
+    }
+  }
+  if (ret == 0) {
+    return 0;
+  }
+
+  for (vm = vm_area.vm_list; vm < vm_area.vm_list + MAXVMAREA; vm++) {
+    if (vm->usable == 0) {
+      vm->usable = 1;
+
+      vm->addr = vm_base->addr_base = addr;
+      vm->len = vm_base->len_base = len;
+      vm_base->permission = flags;
+      vm_base->prot = prot;
+      vm_base->base_off = offset;
+
+      vm->vm_base = vm_base;
+      release(&vm_area.lock);
+      return vm;
+    }
+  }
+  release(&vm_area.lock);
+  return 0;
+}
+
+struct vmarea*
+vmarecopy(struct vmarea* oldvm)
 {
   struct vmarea* vm;
 
   acquire(&vm_area.lock);
-  for (vm = vm_area.vm_list; vm < vm_area.vm_list + MAXVMAREA; vm++) {
-    if (vm->ref == 0) {
-      vm->ref = 1;
 
-      vm->addr = vm->addr_base = addr;
-      vm->len = vm->len_base = len;
-      vm->permission = flags;
-      vm->offset = vm->base_off = offset;
+  for (vm = vm_area.vm_list; vm < vm_area.vm_list + MAXVMAREA; vm++) {
+    if (vm->usable == 0) {
+      vm->usable = 1;
+
+      vm->addr = oldvm->addr;
+      vm->len = oldvm->len;
+      vm->vm_base = oldvm->vm_base;
+      vm->vm_base->ref ++;
       release(&vm_area.lock);
       return vm;
     }
@@ -51,21 +94,23 @@ vmareaalloc(uint64 addr, size_t len, int flags, off_t offset)
 
 void vmarearelease(struct vmarea* vm) {
   acquire(&vm_area.lock);
-  if (vm->ref < 1)
+  if (vm->vm_base->ref < 1)
     panic("vmarearelease");
-  if (--vm->ref > 0) {
+
+  vm->addr = 0;
+  vm->len = 0;
+  vm->usable = 0;
+  if (--vm->vm_base->ref > 0) {
     release(&vm_area.lock);
     return;
   }
 
-  vm->addr = 0;
-  vm->len = 0;
-  vm->addr_base = 0;
-  vm->len_base = 0;
-  vm->permission = 0;
-  vm->file = 0;
-  vm->base_off = 0;
-  vm->offset = 0;
+  vm->vm_base->addr_base = 0;
+  vm->vm_base->len_base = 0;
+  vm->vm_base->permission = 0;
+  vm->vm_base->file = 0;
+  vm->vm_base->base_off = 0;
+  vm->vm_base->prot = 0;
 
   release(&vm_area.lock);
 }
@@ -76,9 +121,9 @@ struct vmarea*
 vmareadup(struct vmarea *vm)
 {
   acquire(&vm_area.lock);
-  if(vm->ref < 1)
+  if(vm->vm_base->ref < 1)
     panic("vmareadup");
-  vm->ref++;
+  vm->vm_base->ref++;
   release(&vm_area.lock);
   return vm;
 }
@@ -135,9 +180,18 @@ vmareaallocmemory(struct proc *p, uint64 dst) {
   printf("vmareaallocmemory\n");
   int i, found = 0;
   struct vmarea* vm;
+  pte_t* pte;
 
-  if (dst % PGSIZE != 0) {
-    panic("vmareaallocmemory dst");
+  if (dst >= MAXVA) {
+    return -1;
+  }
+
+  uint64 va = PGROUNDDOWN(dst);
+  pagetable_t pagetable = p->pagetable;
+
+  if ((pte = walk(pagetable, va, 0)) == 0) {
+    printf("vmareaallocmemory walk failed, va: %p, stval: %p\n", va, dst);
+    return -1;
   }
 
   acquire(&vm_area.lock);
@@ -157,16 +211,15 @@ vmareaallocmemory(struct proc *p, uint64 dst) {
     return -1;
   }
 
-  ilock(vm->file->ip);
 
   uint size =  (uint)(vm->addr + vm->len - dst);
   size = size > PGSIZE ? PGSIZE: size;
 
-  pte_t *pte;
+  uint diffa = dst - vm->vm_base->addr_base;
+
   pte = walk(p->pagetable, dst, 0);
   if(pte == 0 || (*pte & PTE_R) != 0 || (*pte & PTE_W) != 0) {
     printf("pte is invalid...\n");
-    iunlock(vm->file->ip);
     release(&p->lock);
     release(&vm_area.lock);
     return -1;
@@ -176,18 +229,18 @@ vmareaallocmemory(struct proc *p, uint64 dst) {
   uint64 pa0 = PTE2PA(*pte);
   memset((void*)pa0, 0, PGSIZE); // init mem
 
-  int ret = readi(vm->file->ip, 0, pa0, vm->offset, size);
+  ilock(vm->vm_base->file->ip);
+  // 有可能会从mmap的中间位置开始读取数据
+  int ret = readi(vm->vm_base->file->ip, 0, pa0, vm->vm_base->base_off + diffa, size);
   // 如果读取的长度小于应该映射的长度，说明文件比较小
   // 需要进行兼容处理
   if (ret != size) {
     printf("readi: size: %d, ret: %d\n", size, ret);
     //panic("vmareaallocmemory, readi");
   }
-  iunlock(vm->file->ip);
+  iunlock(vm->vm_base->file->ip);
   // printf("vmareaallocmemory ip: ref: %d\n", vm->file->ip->ref);
-  // iunlockput(vm->file->ip);
 
-  vm->offset = vm->base_off + ret;
   release(&p->lock);
   release(&vm_area.lock);
 

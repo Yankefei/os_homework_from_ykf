@@ -132,8 +132,18 @@ exec(char *path, char **argv)
   p->mmap_base = MMAPBASE;  // reset
   // reset vmlist
   for (v = 0; v < NVMAREA; v++) {
-    if (p->vm_list[v] != 0) {
-      vmarearelease(p->vm_list[v]);
+    struct vmarea* vm = p->vm_list[v];
+    if (vm != 0) {
+      if (vm->vm_base->ref == 1) {
+        uvmmmapdealloc(p->pagetable, vm->vm_base->addr_base + vm->vm_base->len_base, vm->vm_base->addr_base);
+        fileclose(vm->vm_base->file);
+      } else {
+        // 清理掉 共享内存的映射结构, mappages 的逆过程
+        int npages =
+          (PGROUNDUP(vm->vm_base->addr_base + vm->vm_base->len_base) - PGROUNDUP(vm->vm_base->addr_base)) / PGSIZE;
+        uvmunmap(p->pagetable, PGROUNDUP(vm->vm_base->addr_base), npages, 0);
+      }
+      vmarearelease(vm);
       p->vm_list[v] = 0;
     }
   }

@@ -129,7 +129,7 @@ makefile(const char *f)
     err("open");
   memset(buf, 'A', BSIZE);
   // write 1.5 page
-  for (i = 0; i < n + n/2; i++) {
+  for (i = 0; i < n + n/2; i++) { // 6
     if (write(fd, buf, BSIZE) != BSIZE)
       err("write 0 makefile");
   }
@@ -355,6 +355,7 @@ fork_test(void)
   if (pid == 0) {
     // checkout 2 pages
     _v1(p1);
+    // 因为fd为只读，所以这里是无须写回文件的，即使设置了 MAP_SHARED
     if (munmap(p1, PGSIZE) == -1) // just the first page
       err("munmap (7)");
     exit(0); // tell the parent that the mapping looks OK.
@@ -369,6 +370,11 @@ fork_test(void)
   }
 
   // check that the parent's mappings are still there.
+  // 如何实现这个过程？
+  // 当子进程已经 munmap的一部分时，退出，要保证父进程的 内存映射区域完整？
+  // 方案：
+  // 通过查阅linux的实现过程，发现，父进程和子进程应该独立使用这块内存，即使这块内存是公共的
+  // 那么就只能将记录信息的结构体拆分，base部分公用，使用ref来管理，独立使用的部分，进行拷贝。
   _v1(p1);
   _v1(p2);
 

@@ -140,7 +140,7 @@ sys_mmap(void) {
   if(growmmapmem(len, PTE_U) < 0)
     return -1;
 
-  struct vmarea* vm_area = vmareaalloc(raddr, len, flags, offset);
+  struct vmarea* vm_area = vmareaalloc(raddr, len, flags, prot, offset);
   if (vm_area == 0)
     panic("vmareaalloc");
 
@@ -170,7 +170,7 @@ sys_mmap(void) {
     }
   }
 
-  vm_area->file = f;
+  vm_area->vm_base->file = f;
   
   filedup(f);
   // printf("sys_mmap: ip: ref: %d\n", f->ip->ref);
@@ -228,15 +228,17 @@ sys_munmap(void) {
     goto failed;
   }
 
-  switch(vm->permission) {
+  switch(vm->vm_base->permission) {
     case MAP_PRIVATE:
       break;
     case MAP_SHARED:
-      // 写回文件，略去是否为脏页的校验
-      n = filewrite(vm->file, addr, len);
-      if (n != len) {
-        printf("sys_munmap, filewrite failed, n: %d, len: %d\n", n, len);
-        goto failed;
+      if (vm->vm_base->prot & PROT_WRITE) {
+        // 写回文件，略去是否为脏页的校验
+        n = filewrite(vm->vm_base->file, addr, len);
+        if (n != len) {
+          printf("sys_munmap, filewrite failed, n: %d, len: %d\n", n, len);
+          goto failed;
+        }
       }
     break;
     default:
@@ -252,12 +254,14 @@ sys_munmap(void) {
   // 方案2：
   // 支持动态回收
   if (vm->len == 0) {
-    // nedd ignore
-    // printf("uvmmmapdealloc. old: %p, new: %p\n", vm->addr_base + vm->len_base, vm->addr_base);
-    uvmmmapdealloc(p->pagetable, vm->addr_base + vm->len_base, vm->addr_base);
+    
+    if (vm->vm_base->ref == 1) {
+      // printf("uvmmmapdealloc. old: %p, new: %p\n", vm->addr_base + vm->len_base, vm->addr_base);
+      uvmmmapdealloc(p->pagetable, vm->vm_base->addr_base + vm->vm_base->len_base, vm->vm_base->addr_base);
 
-    // 不能加 p->lock 锁
-    fileclose(vm->file);
+      // 不能加 p->lock 锁
+      fileclose(vm->vm_base->file);
+    }
 
     vmarearelease(vm);
 

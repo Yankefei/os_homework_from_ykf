@@ -7,10 +7,10 @@
 #ifdef LAB_MMAP
 #define PROT_NONE       0x0
 
-//
+// 一句话解释： 映射的内存是只读的
 #define PROT_READ       0x1
 
-//
+// 一句话解释： 映射的内存是非只读的
 #define PROT_WRITE      0x2
 
 //暂时未用
@@ -18,9 +18,9 @@
 
 
 
-//
+// 一句话解释：如果进程修改了映射内存，可以写回文件 (如果是 PROT_READ， 则也是不需要更新的)
 #define MAP_SHARED      0x01
 
-//
+// 一句话解释：如果进程修改了映射内存，不能写回内存
 #define MAP_PRIVATE     0x02
 #endif
