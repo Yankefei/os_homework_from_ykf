@@ -271,6 +271,7 @@ iget(uint dev, uint inum)
   ip->inum = inum;
   ip->ref = 1;
   ip->valid = 0;
+  ip->detach = 0;
   release(&itable.lock);
 
   return ip;
@@ -337,7 +338,9 @@ void
 iput(struct inode *ip)
 {
   acquire(&itable.lock);
-
+  // ref == 1, 当执行 mmap的时候，ref为2， 不会释放
+  // valid == 1
+  // nlink == 0
   if(ip->ref == 1 && ip->valid && ip->nlink == 0){
     // inode has no links and no other references: truncate and free.
 
@@ -351,6 +354,7 @@ iput(struct inode *ip)
     ip->type = 0;
     iupdate(ip);
     ip->valid = 0;
+    ip->detach = 0;
 
     releasesleep(&ip->lock);
 

@@ -130,23 +130,16 @@ sys_mmap(void) {
   // 使用 kalloc来申请，可以考餐 sys_sbrk 函数的实现
   // 直接用 sbrk 来进行申请
   struct proc* p = myproc();
+  // 对齐地址， 不对齐也没有任何而关系
   acquire(&p->lock);
-  raddr = p->sz;
+  raddr = p->mmap_base;
   release(&p->lock);
 
-  if(growproc(len, 0) < 0)
-    return -1;
-
-  struct vmarea* vm_area = vmareaalloc();
+  struct vmarea* vm_area = vmareaalloc(raddr, len, flags, offset);
   if (vm_area == 0)
     panic("vmareaalloc");
 
-  vm_area->addr = raddr;
-  vm_area->len = len;
-  vm_area->ref = 1;   // use in fork
-  vm_area->permission = 0;
-  vm_area->offset = offset;
-
+  acquire(&p->lock);
   int i;
   for (i = 0; i < NVMAREA; i ++) {
     if (p->vm_list[i] == 0) {
@@ -155,20 +148,40 @@ sys_mmap(void) {
   }
 
   if (p->vm_list[i] != 0) {
-    panic("vm_list empty");
+    vmarearelease(vm_area);
+    release(&p->lock);
+    return -1;
   }
 
-  p->vm_list[i] = vm_area;
-
   //increase the file's reference
-  if(p->ofile[fd] == 0) {
+  struct file* f = p->ofile[fd];
+  if(f == 0) {
     panic("ofile");
   }
 
-  vm_area->file = p->ofile[fd];
-  p->ofile[fd]->ref ++;
+  if (prot & PROT_WRITE) {
+    // 在可写状态下，当文件不可写，且 mmap为共享的状态下，认为是异常的
+    if (!f->writable && !(flags & MAP_PRIVATE)) {
+      goto failed;
+    }
+  }
+
+  vm_area->file = f;
+
+  filedup(f);
+  // printf("sys_mmap: ip: ref: %d\n", f->ip->ref);
+
+  p->vm_list[i] = vm_area;
+  p->mmap_base += len;
+  // 底层  mmap_base
+  release(&p->lock);
 
   return raddr;
+
+failed:
+  vmarearelease(vm_area);
+  release(&p->lock);
+  return -1;
 }
 
 /*
@@ -177,9 +190,81 @@ int munmap(void *addr, size_t len);
 assume that it will either unmap at the start, or at the end, or the whole region
 (but not punch a hole in the middle of a region).
 
-
 */
 uint64
 sys_munmap(void) {
+  uint64  addr;
+  size_t len;
+  int n;
+  struct vmarea* vm;
+
+  argaddr(0, &addr);   // assume 0
+  argaddr(1, &len);
+
+  struct proc* p = myproc();
+  acquire(&p->lock);
+
+  int i;
+  for (i = 0; i < NVMAREA; i ++) {
+    if (p->vm_list[i] != 0 && p->vm_list[i]->addr == addr) {
+      break;
+    }
+  }
+
+  if (i == NVMAREA) {
+    panic("vm_list NVMAREA");
+  }
+
+  vm = p->vm_list[i];
+
+  release(&p->lock);
+
+  if (vmareacheckscope(vm, addr, len) != 0) {
+    goto failed;
+  }
+
+  switch(vm->permission) {
+    case MAP_PRIVATE:
+      break;
+    case MAP_SHARED:
+      // 写回文件，略去是否为脏页的校验
+      n = filewrite(vm->file, addr, len);
+      if (n != len) {
+        printf("sys_munmap, filewrite failed, n: %d, len: %d\n", n, len);
+        goto failed;
+      }
+    break;
+    default:
+      panic("invalid permission");
+  }
+
+  vmarereducescope(vm, addr, len);
+
+  // 方案1：
+  // 回收内存，还是等待彻底不用之后再释放？等待用完统一释放物理页吧，这样简单一些
+  // 目前看只能在程序退出的时候，再一起清理，因为如果这个地方清理，会导致内存不连续，退出会异常
+  // 进程回收的时候，会按顺序将所有申请的内存一起回收，所以暂时不能提前回收映射的内存
+  // 方案2：
+  // 支持动态回收
+  if (vm->len == 0) {
+    // nedd ignore
+    // printf("uvmmmapdealloc. old: %p, new: %p\n", vm->addr_base + vm->len_base, vm->addr_base);
+    uvmmmapdealloc(p->pagetable, vm->addr_base + vm->len_base, vm->addr_base);
+
+    // 不能加 p->lock 锁
+    fileclose(vm->file);
+
+    vmarearelease(vm);
+
+    acquire(&p->lock);
+    p->vm_list[i] = 0;
+    release(&p->lock);
+  }
+
   return 0;
+
+failed:
+  // release(&p->lock);
+
+  return -1;
 }

@@ -208,6 +208,7 @@ sys_unlink(void)
   if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
     goto bad;
 
+  // dirlookup 会增加 ip 的ref数值
   if((ip = dirlookup(dp, name, &off)) == 0)
     goto bad;
   ilock(ip);
@@ -229,8 +230,14 @@ sys_unlink(void)
   iunlockput(dp);
 
   ip->nlink--;
-  // printf("nlink: %d\n", ip->nlink);
   iupdate(ip);
+
+  // 当存在mmap的时候，前面直接调用close, 不会清理, ip->ref的计数还是1，所以实际没有删除
+  // 磁盘文件，所以后面需要再 fileclose一次，保证清理掉
+    // 清理满足的条件：
+    // ip->ref == 1   && ip->valid  && ip->nlink == 0
+    // 这里的 ip->ref，不为1，为2， 因为 dirlookup 会+1
+  // printf("sys_unlink, ip->ref: %d\n", ip->ref);
   iunlockput(ip);
 
   end_op();
@@ -365,6 +372,7 @@ sys_open(void)
     itrunc(ip);
   }
 
+  // printf("sys_open: ip->ref: %d\n", ip->ref);
   iunlock(ip);
   end_op();
 

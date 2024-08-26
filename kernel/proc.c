@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vm_area.h"
 
 struct cpu cpus[NCPU];
 
@@ -173,6 +174,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->mmap_base = MMAPBASE;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -281,12 +283,31 @@ growproc(int n, int mem_flag)
   return 0;
 }
 
+int
+growmmapmem(uint64 addr, int n, int mem_flag)
+{
+  uint64 sz;
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+  if(n > 0){
+    if((sz = uvmallocperm(p->pagetable, addr, addr + n, mem_flag)) == 0) {
+      release(&p->lock);
+      return -1;
+    }
+  } else if(n < 0){
+    sz = uvmmmapdealloc(p->pagetable, addr, addr + n);
+  }
+  release(&p->lock);
+  return 0;
+}
+
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
 fork(void)
 {
-  int i, pid;
+  int i, pid, v;
   struct proc *np;
   struct proc *p = myproc();
 
@@ -304,6 +325,37 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  np->mmap_base = p->mmap_base;
+
+  // 需要将 mmap区域的虚拟内存区域，映射到已经申请好的物理内存上
+  // 1. 依次遍历vm_list, 获取当时page映射的 perm, perm 需要逐页遍历获取
+  // 2. 依次调用 mappages 完成映射
+  for (v = 0; v < NVMAREA; v++) {
+    if (p->vm_list[v] != 0) {
+      np->vm_list[v] = p->vm_list[v];
+
+      uint64 a, beginsz, endsz;
+      pte_t *pte;
+      beginsz = PGROUNDUP(np->vm_list[v]->addr_base);
+      endsz = np->vm_list[v]->addr_base + np->vm_list[v]->len_base;
+      for (a = beginsz; a < endsz; a += PGSIZE) {
+        if((pte = walk(p->pagetable, a, 0)) == 0) {
+          panic("walk process addr");
+        }
+        int page_flags = PTE_FLAGS(*pte);
+        // if ((nppte = walk(np->pagetable, a, 1)) == 0) {
+        //   panic("walk np process addr");
+        // }
+        // *pte = *pte | page_flags;
+
+        if(mappages(np->pagetable, a, PGSIZE, (uint64)PTE2PA(*pte), page_flags) != 0){
+          panic("mappages np process addr");
+        }
+      }
+      vmareadup(np->vm_list[v]);
+    }
+  }
+
   release(&p->lock);
 
   // copy saved user registers.
@@ -367,6 +419,17 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  // clean mmap mem
+  for (int i = 0; i < NVMAREA; i++) {
+    struct vmarea* vm = p->vm_list[i];
+    if (vm != 0) {
+      uvmmmapdealloc(p->pagetable, vm->addr_base + vm->len_base, vm->addr_base);
+      fileclose(vm->file);
+      vmarearelease(vm);
+      p->vm_list[i] = 0;
     }
   }
 

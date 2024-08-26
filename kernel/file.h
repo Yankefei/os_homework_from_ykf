@@ -1,6 +1,7 @@
 struct file {
   enum { FD_NONE, FD_PIPE, FD_INODE, FD_DEVICE } type;
-  int ref; // reference count
+  // 这个字段的加锁用法，可以进行参考，即，如何在vmarea中处理ref字段
+  int ref; // reference count,
   char readable;
   char writable;
   struct pipe *pipe; // FD_PIPE
@@ -20,6 +21,7 @@ struct inode {
   int ref;            // Reference count
   struct sleeplock lock; // protects everything below here
   int valid;          // inode has been read from disk?
+  int detach;           // 是否拆分状态，比如被mmap独占
 
   short type;         // copy of disk inode
   short major;

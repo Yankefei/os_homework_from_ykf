@@ -108,6 +108,9 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+  // need to be locked
+  uint64 mmap_base;                      // 下一次申请mmap的起始位置， 从 MMAPBASE 开始递增
+  // int mmap_sz;                        // mmap映射的总长度(bytes)
   struct vmarea* vm_list[NVMAREA];    // 用于mmap映射
 
 };

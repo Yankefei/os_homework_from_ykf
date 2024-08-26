@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
+#include "vm_area.h"
 
 static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
@@ -23,7 +24,7 @@ int
 exec(char *path, char **argv)
 {
   char *s, *last;
-  int i, off;
+  int i, off, v;
   uint64 argc, sz = 0, sp, ustack[MAXARG], stackbase;
   struct elfhdr elf;
   struct inode *ip;
@@ -127,6 +128,16 @@ exec(char *path, char **argv)
   p->pagetable = pagetable;
   acquire(&p->lock);
   p->sz = sz;
+  // exec 后，新进程将无法访问原进程通过 mmap 申请的内存空间，因为原有的地址空间已被新程序替换。
+  p->mmap_base = MMAPBASE;  // reset
+  // reset vmlist
+  for (v = 0; v < NVMAREA; v++) {
+    if (p->vm_list[v] != 0) {
+      vmarearelease(p->vm_list[v]);
+      p->vm_list[v] = 0;
+    }
+  }
+
   release(&p->lock);
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer

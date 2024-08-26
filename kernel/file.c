@@ -12,6 +12,7 @@
 #include "file.h"
 #include "stat.h"
 #include "proc.h"
+#include "vm_area.h"
 
 struct devsw devsw[NDEV];
 struct {
@@ -66,6 +67,7 @@ fileclose(struct file *f)
     panic("fileclose");
   if(--f->ref > 0){
     release(&ftable.lock);
+    // 存在mmap的时候，第一次close, 到这里就退出了，不会执行下面的清理操作
     return;
   }
   ff = *f;
@@ -77,6 +79,9 @@ fileclose(struct file *f)
     pipeclose(ff.pipe, ff.writable);
   } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
     begin_op();
+    // 当在 sys_unlink 里面没有清理掉的文件，unmap执行后，会在这里进行清理
+    // 清理满足的条件：
+    // ip->ref == 1   && ip->valid  && ip->nlink == 0
     iput(ff.ip);
     end_op();
   }
@@ -180,3 +185,70 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+
+#if 0
+// 将使用 vm_area.c 里面的 vmarereducescope 函数作为替代，因为这里
+// 可能存在现成不安全的情况
+// mmap munmap
+
+// 每次读取  4096个字节的长度，可能存在多次读取的情况
+int copyfilepage(struct proc *p, uint64 dst) {
+  printf("copyfilepage\n");
+  int i, found = 0;
+  struct vmarea* vm;
+
+  if (dst % PGSIZE != 0) {
+    panic("copyfilepage dst");
+  }
+
+  acquire(&p->lock);
+  for (i = 0; i < NVMAREA; i++) {
+    vm = p->vm_list[i];
+    if (vm && (vm->addr <= dst && vm->addr + vm->len > dst))
+    {
+      found = 1;
+      break;
+    }
+  }
+
+  if (0 == found) {
+    release(&p->lock);
+    return -1;
+  }
+
+  ilock(vm->file->ip);
+
+  uint size =  (uint)(vm->addr + vm->len - dst);
+  size = size > PGSIZE ? PGSIZE: size;
+
+  pte_t *pte;
+  pte = walk(p->pagetable, dst, 0);
+  if(pte == 0 || (*pte & PTE_R) != 0 || (*pte & PTE_W) != 0) {
+    printf("pte is invalid...\n");
+    iunlock(vm->file->ip);
+    release(&p->lock);
+    return -1;
+  }
+  *pte |= PTE_R;
+  *pte |= PTE_W;
+  uint64 pa0 = PTE2PA(*pte);
+  memset((void*)pa0, 0, PGSIZE); // init mem
+
+  int ret = readi(vm->file->ip, 0, pa0, vm->offset, size);
+  // 如果读取的长度小于应该映射的长度，说明文件比较小
+  // 需要进行兼容处理
+  if (ret != size) {
+    printf("readi: size: %d, ret: %d\n", size, ret);
+    //panic("copyfilepage, readi");
+  }
+  iunlock(vm->file->ip);
+  // printf("copyfilepage ip: ref: %d\n", vm->file->ip->ref);
+  // iunlockput(vm->file->ip);
+
+  vm->offset = vm->base_off + ret;
+  release(&p->lock);
+
+  return 0;
+}
+
+#endif
