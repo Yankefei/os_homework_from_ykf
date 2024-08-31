@@ -234,7 +234,11 @@ sys_munmap(void) {
     case MAP_SHARED:
       if (vm->vm_base->prot & PROT_WRITE) {
         // 写回文件，略去是否为脏页的校验
-        n = filewrite(vm->vm_base->file, addr, len);
+        // 不能加锁
+        // 这里需要使用设置文件偏移量的版本，否则有bug
+        // n = filewrite(vm->vm_base->file, addr, len);
+        uint64 file_off = addr - vm->vm_base->addr_base;
+        n = realfilewrite(vm->vm_base->file, (uint*)&file_off, addr, len);
         if (n != len) {
           printf("sys_munmap, filewrite failed, n: %d, len: %d\n", n, len);
           goto failed;
