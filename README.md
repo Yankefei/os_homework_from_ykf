@@ -23,7 +23,8 @@ risc-v book: [url](https://pdos.csail.mit.edu/6.1810/2024/xv6.html)  or  [ook-ri
 | lab10: mmap | [mmap](https://pdos.csail.mit.edu/6.1810/2023/labs/mmap.html) | [code1](https://github.com/Yankefei/os_homework_from_ykf/tree/mmap_0826)  [code2](https://github.com/Yankefei/os_homework_from_ykf/tree/mmap_0826_kalloc_page_fault)  | finish |
 
 
-lab10 mmap: Implement in two ways.
+lab10 mmap: Implement in two ways, code2 is more standardized and complete.
+
 
 
 ## 3. note
