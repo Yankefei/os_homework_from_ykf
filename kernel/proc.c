@@ -283,24 +283,6 @@ growproc(int n, int mem_flag)
   return 0;
 }
 
-int
-growmmapmem(uint64 addr, int n, int mem_flag)
-{
-  uint64 sz;
-  struct proc *p = myproc();
-
-  acquire(&p->lock);
-  if(n > 0){
-    if((sz = uvmallocperm(p->pagetable, addr, addr + n, mem_flag)) == 0) {
-      release(&p->lock);
-      return -1;
-    }
-  } else if(n < 0){
-    sz = uvmmmapdealloc(p->pagetable, addr, addr + n);
-  }
-  release(&p->lock);
-  return 0;
-}
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
@@ -332,27 +314,8 @@ fork(void)
   // 2. 依次调用 mappages 完成映射
   for (v = 0; v < NVMAREA; v++) {
     if (p->vm_list[v] != 0) {
-      np->vm_list[v] = p->vm_list[v];
-
-      uint64 a, beginsz, endsz;
-      pte_t *pte;
-      beginsz = PGROUNDUP(np->vm_list[v]->addr_base);
-      endsz = np->vm_list[v]->addr_base + np->vm_list[v]->len_base;
-      for (a = beginsz; a < endsz; a += PGSIZE) {
-        if((pte = walk(p->pagetable, a, 0)) == 0) {
-          panic("walk process addr");
-        }
-        int page_flags = PTE_FLAGS(*pte);
-        // if ((nppte = walk(np->pagetable, a, 1)) == 0) {
-        //   panic("walk np process addr");
-        // }
-        // *pte = *pte | page_flags;
-
-        if(mappages(np->pagetable, a, PGSIZE, (uint64)PTE2PA(*pte), page_flags) != 0){
-          panic("mappages np process addr");
-        }
-      }
-      vmareadup(np->vm_list[v]);
+      np->vm_list[v] =  vmarecopy(p->vm_list[v]);
+      remappagelist(p, np, np->vm_list[v]);
     }
   }
 
@@ -426,8 +389,9 @@ exit(int status)
   for (int i = 0; i < NVMAREA; i++) {
     struct vmarea* vm = p->vm_list[i];
     if (vm != 0) {
-      uvmmmapdealloc(p->pagetable, vm->addr_base + vm->len_base, vm->addr_base);
-      fileclose(vm->file);
+      cleanpagelistmemory(p, vm);
+      if(vm->vm_base->ref == 1)
+        fileclose(vm->vm_base->file);
       vmarearelease(vm);
       p->vm_list[i] = 0;
     }

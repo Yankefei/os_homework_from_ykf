@@ -42,7 +42,7 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
-// int             copyfilepage(struct proc *, uint64);
+int             realfilewrite(struct file *f, uint* off, uint64 addr, int n);
 
 // fs.c
 void            fsinit(int);
@@ -96,7 +96,7 @@ int             cpuid(void);
 void            exit(int);
 int             fork(void);
 int             growproc(int, int);
-int             growmmapmem(uint64, int, int);
+// int             growmmapmem(uint64, int, int);
 void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
@@ -206,11 +206,16 @@ void            virtio_disk_intr(void);
 
 // vm_area.c
 void            vmareainit(void);
-struct vmarea*  vmareaalloc(uint64 addr, size_t len, int flags, off_t offset);
+struct vmarea*  vmareaalloc(uint64 addr, size_t len, int flags, int port, off_t offset);
+struct vmarea*  vmarecopy(struct vmarea*);
 void            vmarearelease(struct vmarea*);
 int             vmareacheckscope(struct vmarea *, uint64, size_t);
 struct vmarea*  vmareadup(struct vmarea *vm);
-struct vmarea*  vmarereducescope(struct vmarea *, uint64, size_t); 
+struct vmarea*  vmarereducescope(struct vmarea *, uint64, size_t);
+int             setpagelist(struct vmarea* vm, uint64 va);
+void            remappagelist(struct proc* p, struct proc* np, struct vmarea* vm);
+int             pagefilewriteback(struct vmarea* vm, uint64 va, size_t len);
+void            cleanpagelistmemory(struct proc* p, struct vmarea* vm);
 int             vmareaallocmemory(struct proc *p, uint64 dst);
 
 // number of elements in fixed-size array

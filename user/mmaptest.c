@@ -382,7 +382,7 @@ Optional challenges
 // choose 1 and 5 to fix
 
 1. If two processes have the same file mmap-ed (as in fork_test ), share their physical pages. You will
-need reference counts on physical pages.
+need reference counts on physical pages. （pass it）
 
 2. Your solution probably allocates a new physical page for each page read from the mmap-ed file, even
 though the data is also in kernel memory in the buffer cache. Modify your implementation to use that
@@ -399,5 +399,5 @@ the file system.
 
 5. Implement page-out and page-in: have the kernel move some parts of processes to disk when physical
 memory is low.[当物理内存不足时，让内核将进程的某些部分移动到磁盘] Then, page in the paged-out memory when the
-process references it.
+process references it. (todo)
 */
