@@ -199,6 +199,7 @@ dns_rep(uint8 *ibuf, int cc)
   }
 
   // needed for DNS servers with EDNS support
+  // WARNING: 某些网络下，这部分数据可能会校验不通过
   for(int i = 0; i < ntohs(hdr->arcount); i++) {
     char *qn = (char *) (ibuf+len);
     if(*qn != 0) {
