@@ -4,7 +4,7 @@ homework[mit-6.1810-2023]
 ## 1. lab-guidance
 lab-url: [guidance](https://pdos.csail.mit.edu/6.1810/2023/labs/guidance.html)
 
-risc-v book: [url](https://pdos.csail.mit.edu/6.1810/2024/xv6.html)  or  [ook-riscv-rev3.pdf](https://github.com/Yankefei/os_homework_from_ykf/blob/main/book-riscv-rev3.pdf)
+risc-v book: [url](https://pdos.csail.mit.edu/6.1810/2024/xv6.html)  or  [book-riscv-rev3.pdf](https://github.com/Yankefei/os_homework_from_ykf/blob/main/book-riscv-rev3.pdf)
 
 
 
